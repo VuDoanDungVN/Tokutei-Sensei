@@ -10,9 +10,9 @@ const Button: React.FC<ButtonProps> = ({ children, variant = 'primary', classNam
   const baseStyles = 'w-full text-center font-bold py-3 px-4 rounded-xl shadow-md transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2';
   
   const variantStyles = {
-    primary: 'bg-brand-blue text-white hover:bg-brand-blue-dark focus:ring-brand-blue',
-    secondary: 'bg-brand-green text-white hover:bg-brand-green-dark focus:ring-brand-green',
-    outline: 'bg-white text-brand-blue border-2 border-brand-blue hover:bg-brand-blue-light focus:ring-brand-blue',
+    primary: 'btn-primary',
+    secondary: 'bg-gray-500 text-white hover:bg-gray-600 focus:ring-gray-500',
+    outline: 'bg-white text-gray-700 border-2 border-gray-300 hover:bg-gray-50 focus:ring-gray-500',
   };
 
   return (

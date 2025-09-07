@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useContext } from 'react';
 import { AppScreen } from '../../types';
 import { AppContext } from '../../App';
-import { appService } from '../../services/geminiService';
+import { authService } from '../../services/firebase';
 import Card from '../shared/Card';
 import Button from '../shared/Button';
 
@@ -13,72 +13,45 @@ const Signup: React.FC = () => {
     const [fullName, setFullName] = useState('');
     const [phoneNumber, setPhoneNumber] = useState('');
     const [loading, setLoading] = useState(false);
+    const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    // Dialog state chung cho cả success và error
-    const [dialogMessage, setDialogMessage] = useState<string | null>(null);
-    const [dialogType, setDialogType] = useState<'success' | 'error' | null>(null);
-    const [showDialog, setShowDialog] = useState(false);
-    const [shouldShowDialog, setShouldShowDialog] = useState(false);
-
-    // Ref để track trạng thái đăng ký và tránh bị can thiệp bởi onAuthStateChanged
-    const isSigningUpRef = useRef(false);
-    const dialogDataRef = useRef<{ message: string, type: 'success' | 'error' } | null>(null);
-
-    // Bảo vệ dialog state khỏi bị clear bởi re-render
-    useEffect(() => {
-        console.log('Dialog state changed:', { dialogMessage, dialogType, isSigningUp: isSigningUpRef.current });
-        // Chỉ clear dialog nếu không đang trong quá trình đăng ký
-        if (!isSigningUpRef.current && dialogMessage) {
-            console.log('Dialog state protected from clearing');
-        }
-    }, [dialogMessage, dialogType]);
-
-    // Handle shouldShowDialog để hiển thị dialog sau khi render
-    useEffect(() => {
-        if (shouldShowDialog && dialogDataRef.current) {
-            console.log('shouldShowDialog is true, setting showDialog to true with data:', dialogDataRef.current);
-            setDialogType(dialogDataRef.current.type);
-            setDialogMessage(dialogDataRef.current.message);
-            setShowDialog(true);
-            setShouldShowDialog(false);
-        }
-    }, [shouldShowDialog]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-
-        // Reset dialog trước
-        setDialogMessage(null);
-        setDialogType(null);
-
+        setError(null);
+        
         try {
+            // Validate form
             if (!fullName.trim()) {
-                setDialogType('error');
-                setDialogMessage('Vui lòng nhập họ tên.');
+                setError('Vui lòng nhập họ tên.');
                 setLoading(false);
                 return;
             }
             if (!email.trim()) {
-                setDialogType('error');
-                setDialogMessage('Vui lòng nhập địa chỉ email.');
+                setError('Vui lòng nhập địa chỉ email.');
                 setLoading(false);
                 return;
             }
             if (!password.trim()) {
-                setDialogType('error');
-                setDialogMessage('Vui lòng nhập mật khẩu.');
+                setError('Vui lòng nhập mật khẩu.');
                 setLoading(false);
                 return;
             }
             if (password !== confirmPassword) {
-                setDialogType('error');
-                setDialogMessage('Mật khẩu xác nhận không khớp.');
+                setError('Mật khẩu xác nhận không khớp.');
+                setLoading(false);
+                return;
+            }
+            if (password.length < 6) {
+                setError('Mật khẩu phải có ít nhất 6 ký tự.');
                 setLoading(false);
                 return;
             }
 
-            await appService.signUpWithEmail(email, password, fullName, phoneNumber);
+            // Create user account
+            await authService.signUpWithEmail(email, password, fullName, phoneNumber);
 
             // Reset form
             setFullName('');
@@ -87,15 +60,18 @@ const Signup: React.FC = () => {
             setPassword('');
             setConfirmPassword('');
 
-            // Hiển thị dialog success ngay lập tức
-            setDialogType('success');
-            setDialogMessage('Đăng ký thành công! Vui lòng kiểm tra email và click link xác thực.');
+            // Show success dialog
+            setShowSuccessDialog(true);
         } catch (err: any) {
-            setDialogType('error');
+            console.error('Signup error:', err);
             if (err.code === 'auth/email-already-in-use') {
-                setDialogMessage('Email này đã được sử dụng. Vui lòng sử dụng email khác.');
+                setError('Email này đã được sử dụng. Vui lòng sử dụng email khác.');
+            } else if (err.code === 'auth/invalid-email') {
+                setError('Email không hợp lệ. Vui lòng kiểm tra lại.');
+            } else if (err.code === 'auth/weak-password') {
+                setError('Mật khẩu quá yếu. Vui lòng chọn mật khẩu mạnh hơn.');
             } else {
-                setDialogMessage('Đã xảy ra lỗi, vui lòng thử lại.');
+                setError('Đã xảy ra lỗi, vui lòng thử lại.');
             }
         } finally {
             setLoading(false);
@@ -188,6 +164,11 @@ const Signup: React.FC = () => {
                                 style={{ fontSize: '12px' }}
                             />
                         </div>
+                        {error && (
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                                <p className="text-red-700 text-sm text-center">{error}</p>
+                            </div>
+                        )}
                         <Button type="submit" disabled={loading}>
                             {loading ? '...' : t('auth.signupButton')}
                         </Button>
@@ -204,35 +185,26 @@ const Signup: React.FC = () => {
                 </p>
             </div>
 
-            {/* Dialog chung cho cả success và error */}
-            {console.log('Dialog state:', { dialogMessage, dialogType, showDialog, shouldShowDialog, dialogData: dialogDataRef.current, isSigningUp: isSigningUpRef.current })}
-            {dialogMessage && (
+            {/* Success Dialog */}
+            {showSuccessDialog && (
                 <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-                    <div
-                        className={`bg-white rounded-xl shadow-lg p-6 w-80 ${dialogType === 'success' ? 'border-green-400' : 'border-red-400'
-                            } border-2`}
-                    >
-                        <p
-                            className={`text-center mb-4 ${dialogType === 'success' ? 'text-green-700' : 'text-red-700'
-                                }`}
-                        >
-                            {dialogMessage}
-                        </p>
-                        <div className="flex justify-center">
+                    <div className="bg-white rounded-xl shadow-lg p-6 w-80 border-2 border-green-400">
+                        <div className="text-center">
+                            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                                <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">Đăng ký thành công!</h3>
+                            <p className="text-sm text-gray-600 mb-4">
+                                Tài khoản của bạn đã được tạo thành công. Vui lòng kiểm tra email và click link xác thực để kích hoạt tài khoản.
+                            </p>
                             <button
-                                onClick={async () => {
-                                    setDialogMessage(null);
-                                    setDialogType(null);
-                                    if (dialogType === 'success') {
-                                        // SignOut user khi click "Xác nhận" để chờ email verification
-                                        await appService.signOut();
-                                        setCurrentScreen(AppScreen.Login);
-                                    }
+                                onClick={() => {
+                                    setShowSuccessDialog(false);
+                                    setCurrentScreen(AppScreen.Login);
                                 }}
-                                className={`px-4 py-2 rounded-lg text-white ${dialogType === 'success'
-                                    ? 'bg-green-600 hover:bg-green-700'
-                                    : 'bg-red-600 hover:bg-red-700'
-                                    }`}
+                                className="w-full btn-primary px-4 py-2 rounded-lg font-medium transition-colors"
                             >
                                 Xác nhận
                             </button>

@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { AppContext } from '../../App';
-import { AppScreen, User } from '../../types';
+import { AppScreen } from '../../types';
 
 interface NavItemProps {
   screen: AppScreen;
@@ -41,10 +41,11 @@ export const AnalyticsIcon = () => (
     </svg>
 );
 
-export const CommunityIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m-7.512 2.72a3 3 0 01-4.682-2.72M12 18.72V4.5m0 14.22a9.094 9.094 0 01-3.741-.479m0 0a3 3 0 014.682-2.72m-4.682 2.72a3 3 0 004.682 2.72m6.75-3.228a3 3 0 00-4.682-2.72 3 3 0 00-4.682 2.72m0 0a3 3 0 01-4.682-2.72M12 4.5v.01" />
-    </svg>
+
+export const TokuteiIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+  </svg>
 );
 
 export const AdminIcon = () => (
@@ -56,11 +57,10 @@ export const AdminIcon = () => (
 
 
 interface BottomNavProps {
-    activeScreen: AppScreen;
-    user: User | null;
+  activeScreen: AppScreen;
 }
 
-const BottomNav: React.FC<BottomNavProps> = ({ activeScreen, user }) => {
+const BottomNav: React.FC<BottomNavProps> = ({ activeScreen }) => {
   const { t } = useContext(AppContext);
   
   let navItems = [
@@ -68,11 +68,8 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeScreen, user }) => {
     { screen: AppScreen.Practice, label: t('nav.practice'), icon: <PracticeIcon /> },
     { screen: AppScreen.Analytics, label: t('nav.analytics'), icon: <AnalyticsIcon /> },
     { screen: AppScreen.Community, label: t('nav.community'), icon: <CommunityIcon /> },
+    { screen: AppScreen.Admin, label: t('nav.admin'), icon: <AdminIcon /> },
   ];
-
-  if (user?.role === 'admin-pro') {
-    navItems.push({ screen: AppScreen.Admin, label: t('nav.admin'), icon: <AdminIcon /> });
-  }
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-white border-t border-slate-200 shadow-t-md z-50">

@@ -1,137 +1,21 @@
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
-import { Question, Language, User } from '../types';
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/auth';
-import 'firebase/compat/firestore';
-import * as pdfjsLib from 'pdfjs-dist/build/pdf';
+import { Question, Language } from '../types';
+import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/build/pdf.worker';
 
 
 // --- Gemini AI Configuration ---
-const API_KEY = process.env.GEMINI_API_KEY;
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
 
 if (!API_KEY) {
-  console.error("API_KEY environment variable not set.");
+  console.error("API_KEY environment variable not set. Please add VITE_GEMINI_API_KEY to your .env file.");
 }
 
 const ai = new GoogleGenAI({ apiKey: API_KEY! });
 
-// --- Firebase Configuration ---
-// This now securely uses environment variables provided by the platform.
-const firebaseConfig = {
-  apiKey: "AIzaSyAz0sGVVytvGFVNW_0P7JuGlyS_U-wBx6A",
-  authDomain: "tokutei-sensei.firebaseapp.com",
-  projectId: "tokutei-sensei",
-  storageBucket: "tokutei-sensei.firebasestorage.app",
-  messagingSenderId: "296461231636",
-  appId: "1:296461231636:web:f88bddbb61d555dc022901",
-  measurementId: "G-C8T9P5KCZS"
-};
+// Cache for kanji analysis to avoid repeated API calls
+const kanjiCache = new Map<string, { word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[]>();
 
-// Initialize Firebase
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
-const auth = firebase.auth();
-const db = firebase.firestore();
-
-// Track Firestore connection status
-let isFirestoreAvailable = true;
-
-// Local Storage keys
-const USER_STORAGE_KEY = 'kaigo_sensei_user';
-const USER_CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
-
-// Local Storage utilities
-const saveUserToStorage = (user: User) => {
-  try {
-    const userData = {
-      ...user,
-      cachedAt: new Date().getTime()
-    };
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
-    console.log('User data saved to localStorage');
-  } catch (error) {
-    console.warn('Failed to save user to localStorage:', error);
-  }
-};
-
-const getUserFromStorage = (): User | null => {
-  try {
-    const stored = localStorage.getItem(USER_STORAGE_KEY);
-    if (!stored) return null;
-    
-    const userData = JSON.parse(stored);
-    const now = new Date().getTime();
-    
-    // Check if cache is expired
-    if (now - userData.cachedAt > USER_CACHE_EXPIRY) {
-      localStorage.removeItem(USER_STORAGE_KEY);
-      return null;
-    }
-    
-    console.log('User data loaded from localStorage');
-    return userData;
-  } catch (error) {
-    console.warn('Failed to load user from localStorage:', error);
-    localStorage.removeItem(USER_STORAGE_KEY);
-    return null;
-  }
-};
-
-const clearUserFromStorage = () => {
-  try {
-    localStorage.removeItem(USER_STORAGE_KEY);
-    console.log('User data cleared from localStorage');
-  } catch (error) {
-    console.warn('Failed to clear user from localStorage:', error);
-  }
-};
-
-// Debug function to check Firestore status
-export const checkFirestoreStatus = () => {
-  console.log('Firestore Status:', {
-    available: isFirestoreAvailable,
-    projectId: db._delegate._databaseId.projectId,
-    databaseId: db._delegate._databaseId.database
-  });
-};
-
-// Tạm thời disable Firestore để tránh lỗi permissions
-// TODO: Cấu hình Firestore rules và enable lại sau
-console.log('Firestore temporarily disabled to avoid permissions errors');
-isFirestoreAvailable = false;
-
-// Create a wrapper for Firestore operations to handle errors gracefully
-const safeFirestoreOperation = async <T>(operation: () => Promise<T>, fallback: T): Promise<T> => {
-  // If Firestore is not available, return fallback immediately
-  if (!isFirestoreAvailable) {
-    console.warn('Firestore not available, using fallback data');
-    return fallback;
-  }
-  
-  try {
-    return await operation();
-  } catch (error: any) {
-    console.warn('Firestore operation failed:', error);
-    
-    // Mark Firestore as unavailable if we get persistent errors
-    if (error.code === 'unavailable' || error.message?.includes('offline') || error.code === 'permission-denied') {
-      console.warn('Marking Firestore as unavailable due to persistent errors');
-      isFirestoreAvailable = false;
-      
-      // Try to re-enable network once
-      try {
-        await db.enableNetwork();
-        isFirestoreAvailable = true;
-      } catch (networkError) {
-        console.warn('Failed to re-enable network:', networkError);
-      }
-    }
-    
-    return fallback;
-  }
-};
 
 
 /**
@@ -155,196 +39,45 @@ const chatModel = ai.chats.create({
 });
 
 export const appService = {
-  // --- Firebase Auth & User Methods ---
-  signUpWithEmail: async (email: string, pass: string, fullName?: string, phoneNumber?: string) => {
-    const userCredential = await auth.createUserWithEmailAndPassword(email, pass);
-    
-    // Cập nhật displayName nếu có
-    if (fullName && userCredential.user) {
-      await userCredential.user.updateProfile({
-        displayName: fullName
-      });
-    }
-    
-    // Gửi email verification
-    await userCredential.user?.sendEmailVerification();
-    
-    // Tạm thời disable Firestore để tránh lỗi permissions
-    // TODO: Cấu hình Firestore rules và enable lại sau
-    /*
-    if (userCredential.user) {
-      try {
-        const userData = {
-          email: userCredential.user.email,
-          fullName: fullName || '',
-          phoneNumber: phoneNumber || '',
-          role: 'user-pro',
-          createdAt: new Date(),
-          emailVerified: false
-        };
-        
-        await db.collection('users').doc(userCredential.user.uid).set(userData);
-        console.log('User data saved to Firestore:', userData);
-      } catch (firestoreError) {
-        console.warn('Failed to save user data to Firestore:', firestoreError);
-        // Không throw error vì đăng ký vẫn thành công
-      }
-    }
-    */
-    console.log('Firestore write temporarily disabled to avoid permissions error');
-    
-    // KHÔNG signOut ở đây để dialog có thể hiển thị
-    // User sẽ được signOut khi click "Xác nhận" trong dialog hoặc khi onAuthStateChanged detect email chưa verify
-    
-    return userCredential;
-  },
-  signInWithEmail: async (email: string, pass: string) => {
-    const userCredential = await auth.signInWithEmailAndPassword(email, pass);
-    // Kiểm tra email đã được verify chưa
-    if (userCredential.user && !userCredential.user.emailVerified) {
-      throw new Error('EMAIL_NOT_VERIFIED');
-    }
-    return userCredential;
-  },
-  signOut: () => auth.signOut(),
-  sendEmailVerification: () => {
-    const user = auth.currentUser;
-    if (user) {
-      return user.sendEmailVerification();
-    }
-    throw new Error('No user logged in');
-  },
-  onAuthStateChanged: (callback: (user: User | null) => void) => {
-    return auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        // Try to get user data from localStorage first
-        let cachedUser = getUserFromStorage();
-        
-        // If cached user exists and matches current user, use it
-        if (cachedUser && cachedUser.uid === user.uid) {
-          console.log('Using cached user data');
-          callback(cachedUser);
-          
-          // Update lastLogin in background
-          const updatedUser = { ...cachedUser, lastLogin: new Date() };
-          saveUserToStorage(updatedUser);
-          
-          // Update Firestore in background
-          safeFirestoreOperation(async () => {
-            await db.collection('users').doc(user.uid).update({
-              lastLogin: new Date()
-            });
-          }, undefined);
-          
-          return;
-        }
-        
-        // Fetch user data from Firestore
-        const userData = await safeFirestoreOperation(async () => {
-          const userDoc = await db.collection('users').doc(user.uid).get();
-          if (userDoc.exists) {
-            const data = userDoc.data() as User;
-            console.log('User data loaded from Firestore:', data);
-            return data;
-          } else {
-            // Create a user document if it doesn't exist
-            const newUserData = { 
-              email: user.email, 
-              role: 'user-pro',
-              createdAt: new Date(),
-              lastLogin: new Date(),
-              emailVerified: user.emailVerified,
-              displayName: user.displayName || user.email?.split('@')[0] || 'User',
-              fullName: user.displayName || '',
-              phoneNumber: ''
-            };
-            await db.collection('users').doc(user.uid).set(newUserData);
-            console.log('New user created in Firestore:', newUserData);
-            return newUserData as User;
-          }
-        }, { 
-          uid: user.uid,
-          email: user.email, 
-          role: 'user-pro',
-          displayName: user.displayName || user.email?.split('@')[0] || 'User',
-          fullName: user.displayName || '',
-          phoneNumber: '',
-          emailVerified: user.emailVerified
-        } as User);
-        
-        const finalUser = { 
-          uid: user.uid, 
-          email: user.email, 
-          role: userData.role || 'user-pro',
-          displayName: userData.displayName || user.displayName || user.email?.split('@')[0] || 'User',
-          fullName: userData.fullName || user.displayName || '',
-          phoneNumber: userData.phoneNumber || '',
-          emailVerified: userData.emailVerified || user.emailVerified
-        };
-        
-        // Save to localStorage
-        saveUserToStorage(finalUser);
-        
-        callback(finalUser);
-      } else {
-        // Clear localStorage when user logs out
-        clearUserFromStorage();
-        callback(null);
-      }
-    });
-  },
-  
-  // --- Firestore Question Methods ---
-  getPracticeQuestions: async (examNumber: number, topic: string): Promise<Question[]> => {
-    return await safeFirestoreOperation(async () => {
-      const snapshot = await db.collection('kaigo-fukushi-pro')
-        .where('examNumber', '==', examNumber)
-        .where('topic', '==', topic)
-        .get();
-      
-      if (snapshot.empty) {
-        console.warn(`No questions found for exam ${examNumber}, topic ${topic}`);
-        return [];
-      }
-      
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Question));
-    }, []);
-  },
 
-  saveExtractedQuestions: async (questions: Omit<Question, 'id'>[]): Promise<void> => {
-    await safeFirestoreOperation(async () => {
-      const batch = db.batch();
-      const collectionRef = db.collection('kaigo-fukushi-pro');
-
-      questions.forEach(questionData => {
-        const docRef = collectionRef.doc(); // Create a new document with a unique ID
-        batch.set(docRef, {
-          ...questionData,
-          createdAt: new Date(),
-          createdBy: auth.currentUser?.uid || 'system'
-        });
-      });
-
-      await batch.commit();
-      console.log(`Successfully saved ${questions.length} questions to Firestore`);
-    }, undefined);
-  },
-
-  // Debug method to test Firestore operations
-  testFirestoreConnection: async (): Promise<boolean> => {
+  // --- Chatbot AI Method ---
+  async chatWithAI(userMessage: string): Promise<string> {
     try {
-      const testDoc = await db.collection('_test').doc('connection-test').get();
-      console.log('Firestore test successful:', testDoc.exists);
-      return true;
+      const prompt = `Bạn là trợ lý AI thông minh và hữu ích tên Mora. Hãy trả lời câu hỏi sau một cách chính xác, chi tiết và thân thiện. Bạn có thể giúp đỡ về:
+
+- Tiếng Nhật và luyện thi Kaigo Fukushi (chuyên môn chính)
+- Các môn học khác như toán, lý, hóa, sinh, văn, sử, địa
+- Công nghệ thông tin và lập trình
+- Kinh tế, tài chính, kinh doanh
+- Sức khỏe và y tế
+- Du lịch và văn hóa
+- Giải trí và thể thao
+- Và bất kỳ chủ đề nào khác mà người dùng quan tâm
+
+QUAN TRỌNG: Khi trả lời, hãy:
+1. Sử dụng xuống dòng (\\n) để tách các đoạn văn
+2. Sử dụng bullet points (•) cho danh sách
+3. Sử dụng số thứ tự (1., 2., 3.) cho các bước
+4. Tạo khoảng trắng giữa các đoạn (\\n\\n)
+5. Làm cho câu trả lời dễ đọc và có cấu trúc rõ ràng
+6. KHÔNG sử dụng ký tự markdown như #, ##, ###, **, *, backtick, etc.
+7. Chỉ sử dụng văn bản thuần túy với bullet points (•) và số thứ tự
+
+Hãy trả lời bằng tiếng Việt một cách dễ hiểu và hữu ích. Nếu không chắc chắn về thông tin, hãy nói rõ và đề xuất nguồn tham khảo. Trả lời ngắn gọn, súc tích và thân thiện.
+
+Câu hỏi của người dùng: ${userMessage}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      return cleanAiText(response.text);
     } catch (error) {
-      console.error('Firestore test failed:', error);
-      return false;
+      console.error('Error in chatWithAI:', error);
+      return 'Xin lỗi, đã có lỗi xảy ra khi xử lý câu hỏi của bạn. Vui lòng thử lại sau.';
     }
   },
-
 
   // --- Gemini AI Methods ---
   async getMotivationalQuote(): Promise<string> {
@@ -409,6 +142,79 @@ export const appService = {
       return "もう一度考えてみてください。キーワードは何ですか？ (Please think again. What is the key word?)";
     }
   },
+
+  async analyzeKanjiInQuestion(questionText: string, options: string[]): Promise<{ word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[]> {
+    try {
+      const fullText = `${questionText} ${options.join(' ')}`;
+      
+      // Check cache first
+      const cacheKey = fullText.trim();
+      if (kanjiCache.has(cacheKey)) {
+        console.log('Using cached kanji analysis');
+        return kanjiCache.get(cacheKey)!;
+      }
+      
+      // Optimized prompt for faster processing
+      const prompt = `Extract kanji words from: "${fullText}"
+
+Return JSON array:
+[{"word":"介護福祉士","furigana":"かいごふくしし","meaning":{"en":"certified care worker","vi":"nhân viên chăm sóc có chứng chỉ"}}]
+
+Rules:
+- Only healthcare/nursing terms
+- Max 8 words
+- Skip single kanji unless standalone word
+- Be concise`;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                word: { type: Type.STRING },
+                furigana: { type: Type.STRING },
+                meaning: {
+                  type: Type.OBJECT,
+                  properties: {
+                    en: { type: Type.STRING },
+                    vi: { type: Type.STRING }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      const jsonText = response.text.trim();
+      const parsed = JSON.parse(jsonText) as { word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[];
+      
+      // Quick validation and deduplication
+      const validWords = parsed.filter(item => item.word && item.furigana && item.meaning);
+      const uniqueWords = validWords.filter((item, index, self) => 
+        index === self.findIndex(t => t.word === item.word)
+      );
+      
+      // Cache the result
+      kanjiCache.set(cacheKey, uniqueWords);
+      
+      // Limit cache size to prevent memory issues
+      if (kanjiCache.size > 50) {
+        const firstKey = kanjiCache.keys().next().value;
+        kanjiCache.delete(firstKey);
+      }
+      
+      return uniqueWords;
+    } catch (error) {
+      console.error("Error analyzing kanji in question:", error);
+      return [];
+    }
+  },
   
   async processPdfToImages(file: File): Promise<{ base64: string, mimeType: string }[]> {
     const fileBuffer = await file.arrayBuffer();
@@ -424,7 +230,7 @@ export const appService = {
         canvas.width = viewport.width;
 
         if (context) {
-            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            await page.render({ canvasContext: context, viewport: viewport, canvas: canvas }).promise;
             const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
             images.push({
                 base64: dataUrl.split(',')[1],

@@ -6,6 +6,12 @@ import ProgressBar from './shared/ProgressBar';
 import Header from './shared/Header';
 import { Topic, TopicCategory } from '../types';
 import ExamSelection from './ExamSelection';
+import ImageUpload from './shared/ImageUpload';
+import QuestionConfirmationModal from './shared/QuestionConfirmationModal';
+import { imageAnalysisService, AnalyzedQuestion } from '../services/imageAnalysisService';
+import { questionService, SubjectCategory } from '../services/questionService';
+import { questionCacheService } from '../services/questionCacheService';
+import { authService } from '../services/firebase';
 
 const PracticeTopics: React.FC = () => {
   const [selectedExam, setSelectedExam] = useState<number | null>(null);
@@ -69,7 +75,162 @@ const CategoryAccordion: React.FC<CategoryAccordionProps> = ({ category, examNum
 
 const TopicItem: React.FC<{ topic: Topic, examNumber: number }> = ({ topic, examNumber }) => {
   const { startPracticeQuiz, t } = useContext(AppContext);
-  const { icon: Icon, titleKey, title, progress, questionsAttempted } = topic;
+  const { icon: Icon, titleKey, title, progress, questionsAttempted, id: topicId } = topic;
+  
+  // Upload image states
+  const [showUpload, setShowUpload] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzedQuestions, setAnalyzedQuestions] = useState<AnalyzedQuestion[]>([]);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  
+  // Firestore questions states
+  const [savedQuestionsCount, setSavedQuestionsCount] = useState(0);
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+
+  // Map topic to subject category
+  const getSubjectCategory = (topicTitle: string): SubjectCategory => {
+    if (topicTitle.includes('Nền tảng nhân văn') || topicTitle.includes('xã hội')) {
+      return 'Nền tảng nhân văn và xã hội';
+    } else if (topicTitle.includes('y học') || topicTitle.includes('tâm lý')) {
+      return 'Kiến thức y học và tâm lý';
+    } else if (topicTitle.includes('chuyên ngành') || topicTitle.includes('điều dưỡng')) {
+      return 'Kiến thức chuyên ngành điều dưỡng';
+    } else {
+      return 'Tổng hợp';
+    }
+  };
+
+  // Load saved questions count
+  const loadSavedQuestionsCount = async () => {
+    const user = authService.getCurrentUser();
+    if (!user) return;
+
+    setIsLoadingQuestions(true);
+    try {
+      const subject = getSubjectCategory(title);
+      
+      // First check if exam period exists without creating it
+      const examPeriod = await questionService.getExamPeriodOnly(user.uid, examNumber);
+      if (!examPeriod) {
+        // No exam period exists, so no questions
+        setSavedQuestionsCount(0);
+        return;
+      }
+      
+      // Get questions for this specific exam number and topic
+      const questions = await questionService.getQuestionsByTopic(
+        examNumber,
+        subject,
+        topicId,
+        100,
+        user.uid,
+        true // use cache
+      );
+      
+      setSavedQuestionsCount(questions.length);
+    } catch (error) {
+      console.error('Error loading questions count:', error);
+      // Don't fallback to simple collection for old questions
+      // Only show questions from the current exam period and topic
+      setSavedQuestionsCount(0);
+    } finally {
+      setIsLoadingQuestions(false);
+    }
+  };
+
+  // Load questions count on component mount
+  React.useEffect(() => {
+    // Clear old cache first to ensure we don't show old questions
+    const user = authService.getCurrentUser();
+    if (user) {
+      const subject = getSubjectCategory(title);
+      questionCacheService.clearOldCache(user.uid, subject);
+    }
+    loadSavedQuestionsCount();
+  }, [title, examNumber]);
+
+  const handleImageUpload = async (file: File) => {
+    setIsAnalyzing(true);
+    setUploadError(null);
+    
+    try {
+      // Check API key configuration
+      const debugInfo = imageAnalysisService.getDebugInfo();
+      console.log('API Debug Info:', debugInfo);
+      
+      if (!debugInfo.apiKeyExists) {
+        setUploadError('API Key chưa được cấu hình. Vui lòng thêm VITE_GEMINI_API_KEY vào file .env');
+        return;
+      }
+      
+      // Test API key first
+      const isApiKeyValid = await imageAnalysisService.testApiKey();
+      if (!isApiKeyValid) {
+        setUploadError('API Key không hợp lệ hoặc đã hết quota. Vui lòng kiểm tra cấu hình VITE_GEMINI_API_KEY trong file .env');
+        return;
+      }
+
+      const subject = getSubjectCategory(title);
+      const result = await imageAnalysisService.analyzeImage(file, subject);
+      
+      if (result.success && result.questions.length > 0) {
+        setAnalyzedQuestions(result.questions);
+        setShowConfirmation(true);
+        setShowUpload(false);
+      } else {
+        const errorMessage = result.error || 'Không tìm thấy câu hỏi nào trong ảnh';
+        setUploadError(errorMessage);
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      setUploadError('Có lỗi xảy ra khi phân tích ảnh. Vui lòng thử lại.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleConfirmSave = async (editedQuestions: AnalyzedQuestion[]) => {
+    setIsSaving(true);
+    
+    try {
+      const user = authService.getCurrentUser();
+      if (!user) {
+        throw new Error('Người dùng chưa đăng nhập');
+      }
+
+      const subject = getSubjectCategory(title);
+      const result = await questionService.saveQuestions(
+        editedQuestions,
+        subject,
+        user.uid,
+        examNumber, // Pass the exam number
+        topicId // Pass the specific topic ID
+      );
+
+      if (result.success) {
+        setShowConfirmation(false);
+        setAnalyzedQuestions([]);
+        // Reload questions count
+        await loadSavedQuestionsCount();
+        // Show success message
+        alert(`Đã lưu thành công ${result.savedCount} câu hỏi vào "${title}" - Kỳ thi ${examNumber}! Bây giờ bạn có thể làm bài kiểm tra.`);
+      } else {
+        throw new Error(result.error || 'Có lỗi xảy ra khi lưu câu hỏi');
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Có lỗi xảy ra khi lưu câu hỏi');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancelUpload = () => {
+    setShowUpload(false);
+    setUploadError(null);
+    setAnalyzedQuestions([]);
+  };
 
   return (
     <div className="bg-gray-50 p-3 rounded-lg">
@@ -80,22 +241,119 @@ const TopicItem: React.FC<{ topic: Topic, examNumber: number }> = ({ topic, exam
         <div className="flex-grow">
           <h3 className="font-semibold text-sm text-brand-text-primary">{t(titleKey)}</h3>
           <p className="text-xs text-brand-text-secondary">{title}</p>
-          <p className="text-xs text-brand-text-secondary mt-1">{questionsAttempted} {t('practice.questionsAttempted')}</p>
+          <div className="flex items-center space-x-2 mt-1">
+            <p className="text-xs text-brand-text-secondary">{questionsAttempted} {t('practice.questionsAttempted')}</p>
+            {savedQuestionsCount > 0 && (
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                {savedQuestionsCount} câu hỏi (Kỳ {examNumber})
+              </span>
+            )}
+            {isLoadingQuestions && (
+              <span className="text-xs text-gray-500">Đang tải...</span>
+            )}
+          </div>
         </div>
-        <button 
-          onClick={() => startPracticeQuiz(topic, examNumber)} 
-          className="bg-brand-blue text-white font-semibold px-4 py-2 rounded-lg text-sm transition hover:bg-brand-blue-dark"
-        >
-          {t('practice.start')}
-        </button>
+        <div className="flex space-x-2">
+          <button 
+            onClick={() => setShowUpload(!showUpload)}
+            className="btn-primary font-semibold px-3 py-2 rounded-lg text-sm transition flex items-center space-x-1"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <span>Upload</span>
+          </button>
+          <button 
+            onClick={() => startPracticeQuiz(topic, examNumber)} 
+            className="font-semibold px-4 py-2 rounded-lg text-sm transition flex items-center space-x-1 btn-primary"
+            disabled={isLoadingQuestions}
+          >
+            {isLoadingQuestions ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span>Đang tải...</span>
+              </>
+            ) : savedQuestionsCount > 0 ? (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Làm bài ({savedQuestionsCount})</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                <span>{t('practice.start')}</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
-       <div className="mt-2">
+      
+      <div className="mt-2">
         <div className="flex justify-between text-xs text-brand-text-secondary mb-1">
           <span>{t('practice.progress')}</span>
           <span className="font-semibold">{progress}%</span>
         </div>
         <ProgressBar value={progress} />
       </div>
+
+      {/* Upload Section */}
+      {showUpload && (
+        <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-medium text-gray-900">Upload ảnh đề thi</h4>
+            <button
+              onClick={handleCancelUpload}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <ImageUpload
+            onImageUpload={handleImageUpload}
+            loading={isAnalyzing}
+            className="mb-3"
+          />
+          
+          {uploadError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-700 mb-2">{uploadError}</p>
+              <div className="text-xs text-red-600">
+                <p><strong>Gợi ý:</strong></p>
+                <ul className="list-disc list-inside mt-1 space-y-1">
+                  <li>Đảm bảo ảnh rõ nét, không bị mờ</li>
+                  <li>Ảnh chứa văn bản tiếng Nhật hoặc tiếng Việt</li>
+                  <li>Định dạng JPG, PNG hoặc WebP</li>
+                  <li>Kích thước dưới 20MB</li>
+                  <li>Thử chụp ảnh với ánh sáng tốt hơn</li>
+                </ul>
+              </div>
+            </div>
+          )}
+          
+          <p className="text-xs text-gray-500">
+            Upload ảnh đề thi để AI tự động trích xuất câu hỏi và đáp án
+          </p>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      <QuestionConfirmationModal
+        isOpen={showConfirmation}
+        onClose={() => setShowConfirmation(false)}
+        onConfirm={handleConfirmSave}
+        questions={analyzedQuestions}
+        loading={isSaving}
+        subject={getSubjectCategory(title)}
+        examNumber={examNumber}
+        topicTitle={title}
+      />
     </div>
   );
 };

@@ -1,0 +1,259 @@
+/* CSS Variables for Dynamic Theming */
+
+:root {
+  /* Light Theme (Default) */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-tertiary: #94a3b8;
+  --border-color: #e2e8f0;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+  --brand-blue: #3b82f6;
+  --brand-blue-dark: #2563eb;
+  --brand-teal: #46bcaf;
+  --brand-button: #81c784;
+  --brand-button-hover: #66bb6a;
+  --brand-bg: #f8fafc;
+  --brand-text-primary: #1e293b;
+  --brand-text-secondary: #64748b;
+}
+
+/* Dark Theme */
+[data-theme="dark"] {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --border-color: #334155;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --brand-blue: #60a5fa;
+  --brand-blue-dark: #3b82f6;
+  --brand-teal: #46bcaf;
+  --brand-button: #81c784;
+  --brand-button-hover: #66bb6a;
+  --brand-bg: #0f172a;
+  --brand-text-primary: #f1f5f9;
+  --brand-text-secondary: #cbd5e1;
+}
+
+/* Font Size Variables */
+:root {
+  --font-size-small: 0.875rem;
+  --font-size-medium: 1rem;
+  --font-size-large: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+}
+
+[data-font-size="small"] {
+  --font-size-small: 0.75rem;
+  --font-size-medium: 0.875rem;
+  --font-size-large: 1rem;
+  --font-size-xl: 1.125rem;
+  --font-size-2xl: 1.25rem;
+  --font-size-3xl: 1.5rem;
+}
+
+[data-font-size="large"] {
+  --font-size-small: 1rem;
+  --font-size-medium: 1.125rem;
+  --font-size-large: 1.25rem;
+  --font-size-xl: 1.375rem;
+  --font-size-2xl: 1.75rem;
+  --font-size-3xl: 2.25rem;
+}
+
+/* Compact Mode */
+[data-compact="true"] {
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 0.75rem;
+  --spacing-lg: 1rem;
+  --spacing-xl: 1.25rem;
+}
+
+[data-compact="false"] {
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 0.75rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+}
+
+/* Apply theme to body */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Apply font size to root */
+html {
+  font-size: var(--font-size-medium);
+}
+
+/* Theme-aware components */
+.bg-white {
+  background-color: var(--bg-primary) !important;
+}
+
+.text-gray-900 {
+  color: var(--text-primary) !important;
+}
+
+.text-gray-700 {
+  color: var(--text-secondary) !important;
+}
+
+.text-gray-500 {
+  color: var(--text-tertiary) !important;
+}
+
+.border-gray-200 {
+  border-color: var(--border-color) !important;
+}
+
+.bg-gray-50 {
+  background-color: var(--bg-secondary) !important;
+}
+
+.bg-gray-100 {
+  background-color: var(--bg-tertiary) !important;
+}
+
+.shadow-lg {
+  box-shadow: 0 10px 15px -3px var(--shadow-color), 0 4px 6px -2px var(--shadow-color) !important;
+}
+
+/* Brand colors remain the same */
+.bg-brand-blue {
+  background-color: var(--brand-blue) !important;
+}
+
+.text-brand-blue {
+  color: var(--brand-blue) !important;
+}
+
+.bg-brand-bg {
+  background-color: var(--brand-bg) !important;
+}
+
+.text-brand-text-primary {
+  color: var(--brand-text-primary) !important;
+}
+
+.text-brand-text-secondary {
+  color: var(--brand-text-secondary) !important;
+}
+
+/* Settings Modal Theme Support */
+.settings-modal {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+.settings-header {
+  background-color: var(--brand-teal) !important;
+  color: white !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+.settings-sidebar {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+.settings-content {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+.settings-tab-active {
+  background-color: var(--brand-button) !important;
+  color: white !important;
+}
+
+.settings-tab-inactive {
+  color: var(--text-secondary) !important;
+}
+
+.settings-tab-inactive:hover {
+  background-color: var(--bg-tertiary) !important;
+}
+
+.settings-input {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+.settings-input:focus {
+  border-color: var(--brand-button) !important;
+  box-shadow: 0 0 0 3px rgba(129, 199, 132, 0.1) !important;
+}
+
+.settings-card {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+.settings-divider {
+  border-color: var(--border-color) !important;
+}
+
+.settings-button-primary {
+  background-color: var(--brand-button) !important;
+  color: white !important;
+}
+
+.settings-button-primary:hover {
+  background-color: var(--brand-button-hover) !important;
+}
+
+.settings-button-secondary {
+  background-color: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+.settings-button-secondary:hover {
+  background-color: var(--bg-secondary) !important;
+}
+
+.settings-toggle-bg {
+  background-color: var(--bg-tertiary) !important;
+}
+
+.settings-toggle-checked {
+  background-color: var(--brand-button) !important;
+}
+
+.settings-toggle-thumb {
+  background-color: var(--bg-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Universal Button Styles */
+.btn-primary {
+  background-color: var(--brand-button) !important;
+  color: white !important;
+  border: none !important;
+}
+
+.btn-primary:hover {
+  background-color: var(--brand-button-hover) !important;
+}
+
+.btn-primary:focus {
+  box-shadow: 0 0 0 3px rgba(129, 199, 132, 0.3) !important;
+}
+
+.btn-primary:disabled {
+  background-color: var(--brand-button) !important;
+  opacity: 0.5 !important;
+}

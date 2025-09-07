@@ -4,18 +4,103 @@ import { AppContext } from '../App';
 import Card from './shared/Card';
 import ProgressBar from './shared/ProgressBar';
 import Button from './shared/Button';
-import { AppScreen } from '../types';
+import { AppScreen, Language } from '../types';
 // Fix: Renamed geminiService to appService to match exported member from geminiService.ts
 import { appService } from '../services/geminiService';
+import { progressService } from '../services/progressService';
 
 const Dashboard: React.FC = () => {
-  const { settings, setCurrentScreen, startMockExam, t } = useContext(AppContext);
+  const { settings, setCurrentScreen, startMockExam, t, setSettings, selectedExamNumber, setSelectedExamNumber, user, currentScreen, setSettingsOpen } = useContext(AppContext);
   const [quote, setQuote] = useState("Loading your daily inspiration...");
+  const [examProgress, setExamProgress] = useState<{ [examNumber: number]: { name: string; progress: number } }>({});
 
   useEffect(() => {
     // Fix: Renamed geminiService to appService to match exported member from geminiService.ts
     appService.getMotivationalQuote().then(setQuote);
   }, []);
+
+  // Load exam progress data
+  useEffect(() => {
+    const loadExamProgress = async () => {
+      if (!user) return;
+
+      try {
+        // Load real progress data from database
+        const allProgress = await progressService.getAllUserProgress(user.uid);
+        
+        // Get all exams with progress (not just passed ones)
+        const examsWithProgress = await progressService.getExamsWithProgress(allProgress);
+        
+        // Convert to display format - show all exams with progress
+        const progressMap: { [examNumber: number]: { name: string; progress: number } } = {};
+        
+        for (const [examNumber, progress] of Object.entries(examsWithProgress)) {
+          const examNum = parseInt(examNumber);
+          const progressPercentage = await progressService.calculateProgressPercentage(progress, examNum);
+          
+          progressMap[examNum] = {
+            name: progressService.getExamName(examNum),
+            progress: progressPercentage
+          };
+        }
+        
+        setExamProgress(progressMap);
+        
+        // Set default exam if none selected
+        if (!selectedExamNumber && Object.keys(progressMap).length > 0) {
+          const firstExam = parseInt(Object.keys(progressMap)[0]);
+          setSelectedExamNumber(firstExam);
+        }
+        
+      } catch (error) {
+        console.error('❌ Error loading exam progress:', error);
+        
+        // Fallback to empty progress if there's an error
+        // No passed exams to show if there's an error
+        setExamProgress({});
+        
+        // Reset selected exam if no passed exams available
+        if (selectedExamNumber) {
+          setSelectedExamNumber(null);
+        }
+      }
+    };
+    
+    loadExamProgress();
+  }, [user, selectedExamNumber, setSelectedExamNumber]);
+
+  // Refresh progress when returning from quiz
+  useEffect(() => {
+    if (user && currentScreen === AppScreen.Dashboard) {
+      const loadExamProgress = async () => {
+        try {
+          const allProgress = await progressService.getAllUserProgress(user.uid);
+          
+          // Get all exams with progress (not just passed ones)
+          const examsWithProgress = await progressService.getExamsWithProgress(allProgress);
+          
+          // Convert to display format - show all exams with progress
+          const progressMap: { [examNumber: number]: { name: string; progress: number } } = {};
+          
+          for (const [examNumber, progress] of Object.entries(examsWithProgress)) {
+            const examNum = parseInt(examNumber);
+            const progressPercentage = await progressService.calculateProgressPercentage(progress, examNum);
+            
+            progressMap[examNum] = {
+              name: progressService.getExamName(examNum),
+              progress: progressPercentage
+            };
+          }
+          
+          setExamProgress(progressMap);
+        } catch (error) {
+          console.error('❌ Error refreshing progress:', error);
+        }
+      };
+      
+      loadExamProgress();
+    }
+  }, [user, currentScreen]);
 
   const getDaysUntilExam = () => {
     if (!settings.examDate) return 0;
@@ -28,11 +113,24 @@ const Dashboard: React.FC = () => {
 
   const daysLeft = getDaysUntilExam();
 
+
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      <header className="pt-4">
-        <h1 className="text-3xl font-bold text-brand-text-primary">{t('dashboard.greeting')}</h1>
-        <p className="text-brand-text-secondary">{t('dashboard.subtitle')}</p>
+    <div className="space-y-6">
+      <header className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-brand-text-primary">{t('dashboard.greeting')}</h1>
+          <p className="text-brand-text-secondary">{t('dashboard.subtitle')}</p>
+        </div>
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          title="Cài đặt"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
       </header>
 
       {/* Progress Card */}
@@ -40,15 +138,72 @@ const Dashboard: React.FC = () => {
         <div className="flex justify-between items-center mb-4">
           <div>
             <p className="text-sm opacity-90">{t('dashboard.progress')}</p>
-            <p className="text-2xl font-bold">JLPT N2 Level (Simulated)</p>
+            <div className="flex items-center space-x-2">
+              <p className="text-2xl font-bold">
+                {selectedExamNumber && examProgress[selectedExamNumber] 
+                  ? examProgress[selectedExamNumber].name 
+                  : Object.keys(examProgress).length > 0 
+                    ? 'Chọn kỳ thi'
+                    : 'Chưa có tiến độ nào'
+                }
+              </p>
+              {Object.keys(examProgress).length > 0 && (
+                <select
+                  value={selectedExamNumber || ''}
+                  onChange={(e) => setSelectedExamNumber(parseInt(e.target.value))}
+                  className="bg-white/20 text-white text-sm rounded px-2 py-1 border border-white/30"
+                >
+                  <option value="" className="text-gray-800">Chọn kỳ thi</option>
+                  {Object.entries(examProgress).map(([examNum, data]) => (
+                    <option key={examNum} value={examNum} className="text-gray-800">
+                      {(data as { name: string; progress: number }).name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
           <div className="text-right">
             <p className="text-sm opacity-90">{daysLeft} {t('dashboard.daysLeft')}</p>
-            <p className="text-2xl font-bold">75%</p>
+            <p className="text-2xl font-bold">
+              {selectedExamNumber && examProgress[selectedExamNumber] 
+                ? `${examProgress[selectedExamNumber].progress}%`
+                : Object.keys(examProgress).length > 0 
+                  ? 'Chọn kỳ thi'
+                  : '0%'
+              }
+            </p>
           </div>
         </div>
-        <ProgressBar value={75} colorClass="bg-white" />
+        <ProgressBar 
+          value={selectedExamNumber && examProgress[selectedExamNumber] 
+            ? examProgress[selectedExamNumber].progress 
+            : Object.keys(examProgress).length > 0 
+              ? 0
+              : 0
+          } 
+          colorClass="bg-white" 
+        />
       </Card>
+
+      {/* No progress message */}
+      {Object.keys(examProgress).length === 0 && (
+        <Card className="bg-green-50 border-green-200">
+          <div className="flex items-center space-x-3">
+            <div className="bg-green-100 p-2 rounded-full">
+              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-semibold text-green-800">Chưa có tiến độ nào</h3>
+              <p className="text-sm text-green-700">
+                Hãy làm bài luyện tập để bắt đầu theo dõi tiến độ học tập của bạn!
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Quick Access */}
       <div className="grid grid-cols-2 gap-4">
@@ -66,7 +221,7 @@ const Dashboard: React.FC = () => {
         </Card>
       </div>
       
-      <Button onClick={startMockExam} variant="secondary">{t('dashboard.startMockExam')}</Button>
+      <Button onClick={startMockExam} variant="primary">{t('dashboard.startMockExam')}</Button>
 
       {/* Motivational Quote & Streak */}
       <Card className="text-center">
@@ -92,6 +247,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </Card>
+
     </div>
   );
 };

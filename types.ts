@@ -3,6 +3,7 @@ export enum AppScreen {
   Login = 'LOGIN',
   Signup = 'SIGNUP',
   Dashboard = 'DASHBOARD',
+  Tokutei = 'TOKUTEI',
   Practice = 'PRACTICE',
   Quiz = 'QUIZ',
   Results = 'RESULTS',
@@ -31,6 +32,14 @@ export interface UserSettings {
   level: ExamLevel;
   examDate: string;
   weeklyStudyTime: number;
+  // New settings
+  theme: 'light' | 'dark' | 'auto';
+  fontSize: 'small' | 'medium' | 'large';
+  autoSave: boolean;
+  notifications: boolean;
+  soundEnabled: boolean;
+  studyReminders: boolean;
+  compactMode: boolean;
 }
 
 export interface Topic {
@@ -40,6 +49,7 @@ export interface Topic {
   icon: React.ElementType;
   progress: number;
   questionsAttempted: number;
+  questions?: Question[];
 }
 
 export interface TopicCategory {
@@ -60,11 +70,11 @@ export interface KanjiHint {
 
 export interface Question {
   id: string; // Firestore document ID
-  examNumber: number;
-  topic: string; // Japanese topic title
+  examNumber?: number;
+  topic?: string; // Japanese topic title
   question: string;
-  options: string[];
-  correctAnswer: number;
+  options: string[] | { id: string; text: string; isCorrect?: boolean }[];
+  correctAnswer: number | string;
   explanation: string;
   kanjiHints?: KanjiHint[];
 }
