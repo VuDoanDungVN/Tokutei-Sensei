@@ -10,6 +10,7 @@ export enum AppScreen {
   Analytics = 'ANALYTICS',
   Community = 'COMMUNITY',
   Admin = 'ADMIN',
+  StudySupport = 'STUDY_SUPPORT',
 }
 
 export type Language = 'ja' | 'en' | 'vi';

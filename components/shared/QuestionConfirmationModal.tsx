@@ -53,6 +53,13 @@ const QuestionConfirmationModal: React.FC<QuestionConfirmationModalProps> = ({
     }
   };
 
+  const getCorrectAnswerColor = (question: AnalyzedQuestion) => {
+    if (question.needsManualReview || question.correctAnswer === null) {
+      return 'text-orange-600 bg-orange-100';
+    }
+    return 'text-green-600 bg-green-100';
+  };
+
   const getDifficultyText = (difficulty?: string) => {
     switch (difficulty) {
       case 'easy': return 'Dễ';
@@ -71,6 +78,16 @@ const QuestionConfirmationModal: React.FC<QuestionConfirmationModalProps> = ({
     setEditingQuestionIndex(questionIndex);
     setEditingField('option');
     setEditingOptionIndex(optionIndex);
+  };
+
+  const handleSetCorrectAnswer = (questionIndex: number, correctAnswer: string) => {
+    const updatedQuestions = [...editedQuestions];
+    updatedQuestions[questionIndex] = {
+      ...updatedQuestions[questionIndex],
+      correctAnswer: correctAnswer,
+      needsManualReview: false
+    };
+    setEditedQuestions(updatedQuestions);
   };
 
   const handleEditExplanation = (questionIndex: number) => {
@@ -240,9 +257,17 @@ const QuestionConfirmationModal: React.FC<QuestionConfirmationModalProps> = ({
                           </div>
                           <h3 className="font-medium text-gray-900">
                             Câu {index + 1}
-                            <span className="ml-2 text-sm text-gray-500">
-                              (Đáp án đúng: {question.correctAnswer})
+                            <span className={`ml-2 text-sm px-2 py-1 rounded ${getCorrectAnswerColor(question)}`}>
+                              {question.correctAnswer 
+                                ? `Đáp án đúng: ${question.correctAnswer}` 
+                                : 'Cần xác định đáp án đúng'
+                              }
                             </span>
+                            {question.needsManualReview && (
+                              <span className="ml-2 text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">
+                                ⚠️ Cần xem xét
+                              </span>
+                            )}
                           </h3>
                         </div>
                         <button
@@ -309,6 +334,8 @@ const QuestionConfirmationModal: React.FC<QuestionConfirmationModalProps> = ({
                         <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium ${
                           option.id === question.correctAnswer 
                             ? 'bg-green-100 text-green-700 border-2 border-green-300' 
+                            : question.correctAnswer === null
+                            ? 'bg-orange-100 text-orange-700 border-2 border-orange-300'
                             : 'bg-gray-100 text-gray-700'
                         }`}>
                           {option.id}
@@ -347,6 +374,14 @@ const QuestionConfirmationModal: React.FC<QuestionConfirmationModalProps> = ({
                                 <span className="flex-shrink-0 text-green-600 text-sm font-medium">
                                   ✓ Đúng
                                 </span>
+                              )}
+                              {question.correctAnswer === null && (
+                                <button
+                                  onClick={() => handleSetCorrectAnswer(index, option.id)}
+                                  className="flex-shrink-0 text-orange-600 hover:text-orange-800 text-sm font-medium px-2 py-1 border border-orange-300 rounded hover:bg-orange-50"
+                                >
+                                  Chọn làm đáp án đúng
+                                </button>
                               )}
                               <button
                                 onClick={() => handleEditOption(index, optionIndex)}

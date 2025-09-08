@@ -143,6 +143,76 @@ Câu hỏi của người dùng: ${userMessage}`;
     }
   },
 
+  async analyzeQuestion(question: string, options: string[]): Promise<{correctAnswer: number, explanation: string}> {
+    try {
+      const prompt = `You are an expert in Japanese Kaigo Fukushi (介護福祉士) exam. Analyze the following question and determine the correct answer.
+
+Question: "${question}"
+
+Options:
+${options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}
+
+Please respond in the following JSON format:
+{
+  "correctAnswer": [0-${options.length - 1}], // Index of correct answer (0 for first option, 1 for second, etc.)
+  "explanation": "Brief explanation of why this answer is correct in Vietnamese"
+}
+
+Consider:
+- Kaigo Fukushi exam standards and requirements
+- Japanese healthcare and elderly care practices
+- Legal and ethical considerations in caregiving
+- Best practices in nursing care
+
+Respond only with valid JSON, no additional text.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+
+      const responseText = cleanAiText(response.text);
+      
+      try {
+        const result = JSON.parse(responseText);
+        
+        // Validate the response
+        if (typeof result.correctAnswer !== 'number' || result.correctAnswer < 0 || result.correctAnswer >= options.length) {
+          throw new Error('Invalid correctAnswer');
+        }
+        
+        if (typeof result.explanation !== 'string') {
+          throw new Error('Invalid explanation');
+        }
+
+        return {
+          correctAnswer: result.correctAnswer,
+          explanation: result.explanation
+        };
+      } catch (parseError) {
+        console.error('Error parsing AI response:', parseError);
+        console.error('Raw response:', responseText);
+        
+        // Fallback: try to extract answer from text
+        const answerMatch = responseText.match(/(?:correctAnswer|đáp án|answer)[\s:]*(\d)/i);
+        if (answerMatch) {
+          const answerIndex = parseInt(answerMatch[1]) - 1;
+          if (answerIndex >= 0 && answerIndex < options.length) {
+            return {
+              correctAnswer: answerIndex,
+              explanation: 'Được phân tích bởi AI (tự động xác định)'
+            };
+          }
+        }
+        
+        throw new Error('Could not parse AI response');
+      }
+    } catch (error) {
+      console.error("Error analyzing question:", error);
+      throw new Error('Không thể phân tích câu hỏi. Vui lòng thử lại.');
+    }
+  },
+
   async analyzeKanjiInQuestion(questionText: string, options: string[]): Promise<{ word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[]> {
     try {
       const fullText = `${questionText} ${options.join(' ')}`;

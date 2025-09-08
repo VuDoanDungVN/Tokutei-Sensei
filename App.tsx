@@ -3,6 +3,7 @@ import './styles/themes.css';
 import Onboarding from './components/Onboarding';
 import Dashboard from './components/Dashboard';
 import Tokutei from './components/Tokutei';
+import StudySupport from './components/StudySupport';
 import PracticeTopics from './components/PracticeTopics';
 import QuizView from './components/QuizView';
 import Results from './components/Results';
@@ -16,7 +17,7 @@ import { translations } from './constants';
 import { authService } from './services/firebase';
 import { questionService } from './services/questionService';
 import { User } from 'firebase/auth';
-import { HomeIcon, TokuteiIcon, PracticeIcon, AnalyticsIcon, AdminIcon } from './components/shared/BottomNav';
+import { HomeIcon, TokuteiIcon, PracticeIcon, AnalyticsIcon, AdminIcon, StudySupportIcon } from './components/shared/BottomNav';
 import Chatbot from './components/shared/Chatbot';
 import Settings from './components/shared/Settings';
 import { useTheme } from './hooks/useTheme';
@@ -33,7 +34,8 @@ const Sidebar: React.FC<{ activeScreen: AppScreen, user: User | null }> = ({ act
   const { setCurrentScreen, t, sidebarOpen, setSidebarOpen } = useContext(AppContext);
   let navItems = [
     { screen: AppScreen.Dashboard, label: t('nav.home'), icon: <HomeIcon /> },
-    { screen: AppScreen.Tokutei, label: 'Tokutei', icon: <TokuteiIcon /> },
+    // { screen: AppScreen.Tokutei, label: 'Tokutei', icon: <TokuteiIcon /> }, // Commented out - not needed currently
+    { screen: AppScreen.StudySupport, label: 'Hỗ trợ học tập', icon: <StudySupportIcon /> },
     { screen: AppScreen.Practice, label: t('nav.practice'), icon: <PracticeIcon /> },
     { screen: AppScreen.Analytics, label: t('nav.analytics'), icon: <AnalyticsIcon /> },
   ];
@@ -447,6 +449,7 @@ const App: React.FC = () => {
     switch (currentScreen) {
       case AppScreen.Dashboard: return <Dashboard />;
       case AppScreen.Tokutei: return <Tokutei />;
+      case AppScreen.StudySupport: return <StudySupport />;
       case AppScreen.Practice: return <PracticeTopics />;
       case AppScreen.Quiz: return <QuizView questions={selectedTopic?.questions || quizQuestions} isMockExam={!selectedTopic} />;
       case AppScreen.Results: return <Results />;

@@ -54,6 +54,72 @@ const ExamSelection: React.FC<ExamSelectionProps> = ({ onSelectExam }) => {
           </div>
         </Card>
 
+        {/* Exam Selection Accordion - Moved to top priority */}
+        <Card className="mt-8 bg-gradient-to-r from-gray-50 to-blue-50 border-gray-200">
+          <button
+            onClick={() => setIsExamSectionOpen(!isExamSectionOpen)}
+            className="w-full text-left p-4 flex justify-between items-center hover:bg-gray-50 transition-colors rounded-lg"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">
+                  Tất cả kỳ thi Kaigo Fukushi
+                </h3>
+                <p className="text-sm text-gray-600">Chọn kỳ thi để bắt đầu luyện tập</p>
+              </div>
+            </div>
+            <svg 
+              className={`w-6 h-6 text-gray-500 transition-transform duration-200 ${isExamSectionOpen ? 'rotate-180' : ''}`} 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          {isExamSectionOpen && (
+            <div className="px-4 pb-4">
+              <div className="border-t border-gray-200 pt-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {exams.map(examNumber => (
+                    <Card
+                      key={examNumber}
+                      onClick={() => onSelectExam(examNumber)}
+                      className="!p-0 text-center flex flex-col items-center justify-center aspect-square transition-all duration-300 transform hover:scale-105 hover:shadow-lg border-2 border-transparent hover:border-green-300 bg-white hover:bg-green-50 group cursor-pointer"
+                    >
+                      <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center mb-2 group-hover:from-green-500 group-hover:to-green-700 transition-all duration-300">
+                        <span className="text-white font-bold text-lg">{examNumber}</span>
+                      </div>
+                      <div className="font-semibold text-gray-800 text-sm">
+                        {settings.language === 'ja'
+                          ? t('practice.examN', { n: examNumber })
+                          : (
+                            <>
+                              <span className="block text-sm font-bold">{t('practice.examN', { n: examNumber }).split('(')[0]}</span>
+                              <span className="block text-xs text-gray-500 mt-1">
+                                {t('practice.examN', { n: examNumber }).split('(')[1]?.replace(')', '')}
+                              </span>
+                            </>
+                          )
+                        }
+                      </div>
+                      <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
         {/* Kaigo Fukushi Information */}
         <div className="mt-8 space-y-6">
           {/* What is Kaigo Fukushi */}
@@ -278,71 +344,6 @@ const ExamSelection: React.FC<ExamSelectionProps> = ({ onSelectExam }) => {
             </div>
           </Card>
 
-          {/* Exam Selection Accordion */}
-          <Card className="bg-gradient-to-r from-gray-50 to-blue-50 border-gray-200">
-            <button
-              onClick={() => setIsExamSectionOpen(!isExamSectionOpen)}
-              className="w-full text-left p-4 flex justify-between items-center hover:bg-gray-50 transition-colors rounded-lg"
-            >
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800">
-                    Tất cả kỳ thi Kaigo Fukushi
-                  </h3>
-                  <p className="text-sm text-gray-600">Chọn kỳ thi để bắt đầu luyện tập</p>
-                </div>
-              </div>
-              <svg 
-                className={`w-6 h-6 text-gray-500 transition-transform duration-200 ${isExamSectionOpen ? 'rotate-180' : ''}`} 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            
-            {isExamSectionOpen && (
-              <div className="px-4 pb-4">
-                <div className="border-t border-gray-200 pt-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                    {exams.map(examNumber => (
-                      <Card
-                        key={examNumber}
-                        onClick={() => onSelectExam(examNumber)}
-                        className="!p-0 text-center flex flex-col items-center justify-center aspect-square transition-all duration-300 transform hover:scale-105 hover:shadow-lg border-2 border-transparent hover:border-green-300 bg-white hover:bg-green-50 group cursor-pointer"
-                      >
-                        <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center mb-2 group-hover:from-green-500 group-hover:to-green-700 transition-all duration-300">
-                          <span className="text-white font-bold text-lg">{examNumber}</span>
-                        </div>
-                        <div className="font-semibold text-gray-800 text-sm">
-                          {settings.language === 'ja'
-                            ? t('practice.examN', { n: examNumber })
-                            : (
-                              <>
-                                <span className="block text-sm font-bold">{t('practice.examN', { n: examNumber }).split('(')[0]}</span>
-                                <span className="block text-xs text-gray-500 mt-1">
-                                  {t('practice.examN', { n: examNumber }).split('(')[1]?.replace(')', '')}
-                                </span>
-                              </>
-                            )
-                          }
-                        </div>
-                        <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </Card>
         </div>
       </div>
     </div>

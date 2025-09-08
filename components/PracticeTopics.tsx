@@ -6,8 +6,8 @@ import ProgressBar from './shared/ProgressBar';
 import Header from './shared/Header';
 import { Topic, TopicCategory } from '../types';
 import ExamSelection from './ExamSelection';
-import ImageUpload from './shared/ImageUpload';
 import QuestionConfirmationModal from './shared/QuestionConfirmationModal';
+import ManualQuestionInput from './shared/ManualQuestionInput';
 import { imageAnalysisService, AnalyzedQuestion } from '../services/imageAnalysisService';
 import { questionService, SubjectCategory } from '../services/questionService';
 import { questionCacheService } from '../services/questionCacheService';
@@ -85,6 +85,10 @@ const TopicItem: React.FC<{ topic: Topic, examNumber: number }> = ({ topic, exam
   const [isSaving, setIsSaving] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   
+  // Manual input states
+  const [inputMode, setInputMode] = useState<'image' | 'manual'>('image');
+  const [existingQuestions, setExistingQuestions] = useState<AnalyzedQuestion[]>([]);
+  
   // Firestore questions states
   const [savedQuestionsCount, setSavedQuestionsCount] = useState(0);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
@@ -140,6 +144,48 @@ const TopicItem: React.FC<{ topic: Topic, examNumber: number }> = ({ topic, exam
     }
   };
 
+  // Load existing questions for manual input
+  const loadExistingQuestions = async () => {
+    const user = authService.getCurrentUser();
+    if (!user) return;
+
+    setIsLoadingQuestions(true);
+    try {
+      const subject = getSubjectCategory(title);
+      
+      // Get questions for this specific exam number and topic
+      const questions = await questionService.getQuestionsByTopic(
+        examNumber,
+        subject,
+        topicId,
+        100,
+        user.uid,
+        true // use cache
+      );
+      
+      // Convert to AnalyzedQuestion format
+      const analyzedQuestions: AnalyzedQuestion[] = questions.map(q => ({
+        question: q.question,
+        options: Array.isArray(q.options) 
+          ? q.options.map((opt, index) => ({
+              id: (index + 1).toString(),
+              text: typeof opt === 'string' ? opt : opt.text,
+              isCorrect: index === q.correctAnswer
+            }))
+          : [],
+        correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
+        explanation: q.explanation || 'Câu hỏi đã lưu'
+      }));
+      
+      setExistingQuestions(analyzedQuestions);
+    } catch (error) {
+      console.error('Error loading existing questions:', error);
+      setExistingQuestions([]);
+    } finally {
+      setIsLoadingQuestions(false);
+    }
+  };
+
   // Load questions count on component mount
   React.useEffect(() => {
     // Clear old cache first to ensure we don't show old questions
@@ -149,6 +195,7 @@ const TopicItem: React.FC<{ topic: Topic, examNumber: number }> = ({ topic, exam
       questionCacheService.clearOldCache(user.uid, subject);
     }
     loadSavedQuestionsCount();
+    loadExistingQuestions();
   }, [title, examNumber]);
 
   const handleImageUpload = async (file: File) => {
@@ -212,8 +259,9 @@ const TopicItem: React.FC<{ topic: Topic, examNumber: number }> = ({ topic, exam
       if (result.success) {
         setShowConfirmation(false);
         setAnalyzedQuestions([]);
-        // Reload questions count
+        // Reload questions count and existing questions
         await loadSavedQuestionsCount();
+        await loadExistingQuestions();
         // Show success message
         alert(`Đã lưu thành công ${result.savedCount} câu hỏi vào "${title}" - Kỳ thi ${examNumber}! Bây giờ bạn có thể làm bài kiểm tra.`);
       } else {
@@ -230,6 +278,13 @@ const TopicItem: React.FC<{ topic: Topic, examNumber: number }> = ({ topic, exam
     setShowUpload(false);
     setUploadError(null);
     setAnalyzedQuestions([]);
+    setInputMode('image');
+  };
+
+  const handleManualQuestionsAnalyzed = (questions: AnalyzedQuestion[]) => {
+    setAnalyzedQuestions(questions);
+    setShowConfirmation(true);
+    setShowUpload(false);
   };
 
   return (
@@ -304,7 +359,7 @@ const TopicItem: React.FC<{ topic: Topic, examNumber: number }> = ({ topic, exam
       {showUpload && (
         <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
           <div className="flex items-center justify-between mb-3">
-            <h4 className="font-medium text-gray-900">Upload ảnh đề thi</h4>
+            <h4 className="font-medium text-gray-900">Thêm câu hỏi mới</h4>
             <button
               onClick={handleCancelUpload}
               className="text-gray-400 hover:text-gray-600"
@@ -314,14 +369,68 @@ const TopicItem: React.FC<{ topic: Topic, examNumber: number }> = ({ topic, exam
               </svg>
             </button>
           </div>
+
+          {/* Input Mode Tabs */}
+          <div className="mb-4">
+            <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => setInputMode('image')}
+                className={`flex-1 py-2 px-3 text-sm font-medium rounded-md transition-colors ${
+                  inputMode === 'image'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                📷 Upload ảnh
+              </button>
+              <button
+                onClick={() => setInputMode('manual')}
+                className={`flex-1 py-2 px-3 text-sm font-medium rounded-md transition-colors ${
+                  inputMode === 'manual'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                ✏️ Nhập thủ công
+              </button>
+            </div>
+          </div>
           
-          <ImageUpload
-            onImageUpload={handleImageUpload}
-            loading={isAnalyzing}
-            className="mb-3"
-          />
+          {/* Image Upload Mode */}
+          {inputMode === 'image' && (
+            <div className="mb-3">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    handleImageUpload(file);
+                  }
+                }}
+                disabled={isAnalyzing}
+                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              {isAnalyzing && (
+                <div className="mt-2 flex items-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                  <span className="text-sm text-gray-600">Đang phân tích ảnh...</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Manual Input Mode */}
+          {inputMode === 'manual' && (
+            <ManualQuestionInput
+              onQuestionsAnalyzed={handleManualQuestionsAnalyzed}
+              onCancel={handleCancelUpload}
+              loading={isAnalyzing}
+              existingQuestions={existingQuestions}
+            />
+          )}
           
-          {uploadError && (
+          {uploadError && inputMode === 'image' && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-700 mb-2">{uploadError}</p>
               <div className="text-xs text-red-600">
@@ -337,9 +446,16 @@ const TopicItem: React.FC<{ topic: Topic, examNumber: number }> = ({ topic, exam
             </div>
           )}
           
-          <p className="text-xs text-gray-500">
-            Upload ảnh đề thi để AI tự động trích xuất câu hỏi và đáp án
-          </p>
+          {inputMode === 'image' && (
+            <p className="text-xs text-gray-500">
+              Upload ảnh đề thi để AI tự động trích xuất câu hỏi và đáp án
+            </p>
+          )}
+          {inputMode === 'manual' && (
+            <p className="text-xs text-gray-500">
+              Nhập câu hỏi và đáp án thủ công, AI sẽ tự động phân tích và xác định đáp án đúng
+            </p>
+          )}
         </div>
       )}
 

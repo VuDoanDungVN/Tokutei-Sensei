@@ -10,10 +10,12 @@ export interface QuestionOption {
 export interface AnalyzedQuestion {
   question: string;
   options: QuestionOption[];
-  correctAnswer?: string;
+  correctAnswer?: string | null;
   explanation?: string;
   difficulty?: 'easy' | 'medium' | 'hard';
   topic?: string;
+  needsManualReview?: boolean;
+  notes?: string;
 }
 
 export interface ImageAnalysisResult {
@@ -216,6 +218,15 @@ BƯỚC 3: TRÍCH XUẤT NỘI DUNG
 - Bao gồm cả phần giải thích nếu có
 - Tìm đáp án đúng (○, ●, ✓, đánh dấu, tô đậm)
 
+BƯỚC 4: XỬ LÝ CÂU HỎI KHÔNG RÕ RÀNG
+- Nếu chỉ có "Chọn đáp án đúng nhất" mà không có câu hỏi cụ thể:
+  + Tìm câu hỏi ở câu trước đó (có thể là câu hỏi liên quan)
+  + Hoặc tạo câu hỏi dựa trên ngữ cảnh của các đáp án
+  + Hoặc đánh dấu là "Câu hỏi cần xác định thêm"
+- Nếu không tìm thấy đáp án đúng được đánh dấu:
+  + Đánh dấu correctAnswer là null
+  + Thêm ghi chú "Cần xác định đáp án đúng thủ công"
+
 Hãy trích xuất TẤT CẢ các câu hỏi trắc nghiệm từ ảnh và trả về kết quả theo định dạng JSON sau:
 
 {
@@ -240,10 +251,12 @@ Hãy trích xuất TẤT CẢ các câu hỏi trắc nghiệm từ ảnh và tr�
           "text": "Nội dung đầy đủ của đáp án D (bao gồm tất cả dòng)"
         }
       ],
-      "correctAnswer": "A",
+      "correctAnswer": "A", // hoặc null nếu không xác định được
       "explanation": "Giải thích chi tiết tại sao đáp án này đúng (nếu có trong ảnh)",
       "difficulty": "medium",
-      "topic": "Chủ đề cụ thể của câu hỏi"
+      "topic": "Chủ đề cụ thể của câu hỏi",
+      "needsManualReview": false, // true nếu cần xem xét thủ công
+      "notes": "Ghi chú đặc biệt (nếu có)"
     }
   ]
 }
@@ -255,6 +268,22 @@ HƯỚNG DẪN CHI TIẾT:
 - Nếu có nhiều câu hỏi, trích xuất tất cả
 - Nếu không chắc chắn về đáp án đúng, hãy đoán dựa trên ngữ cảnh
 - Ưu tiên trích xuất đầy đủ hơn là chính xác tuyệt đối
+
+XỬ LÝ CÁC TRƯỜNG HỢP ĐẶC BIỆT:
+1. Câu hỏi chỉ có "Chọn đáp án đúng nhất":
+   - Tìm câu hỏi ở câu trước đó (có thể liên quan)
+   - Hoặc tạo câu hỏi dựa trên nội dung các đáp án
+   - Đặt needsManualReview = true
+
+2. Không tìm thấy đáp án đúng được đánh dấu:
+   - Đặt correctAnswer = null
+   - Đặt needsManualReview = true
+   - Thêm ghi chú "Cần xác định đáp án đúng thủ công"
+
+3. Câu hỏi liên quan đến câu trước:
+   - Tham chiếu đến câu hỏi trước đó
+   - Tạo câu hỏi dựa trên ngữ cảnh
+   - Đặt notes = "Liên quan đến câu hỏi trước"
 
 Lưu ý:
 - Chỉ trả về JSON hợp lệ, không có text thêm

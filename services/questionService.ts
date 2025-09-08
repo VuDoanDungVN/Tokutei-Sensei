@@ -475,11 +475,11 @@ class QuestionService {
         ...doc.data()
       })) as FirestoreQuestion[];
 
-      // Sort by createdAt on client side
+      // Sort by createdAt on client side - oldest first (ascending order)
       questions.sort((a, b) => {
         const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
         const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
-        return bTime - aTime; // Descending order
+        return aTime - bTime; // Ascending order - oldest questions first
       });
 
       return questions;
@@ -619,11 +619,11 @@ class QuestionService {
       // Filter by subject on client side
       questions = questions.filter(q => q.subject === subject);
 
-      // Sort by createdAt on client side
+      // Sort by createdAt on client side - oldest first (ascending order)
       questions.sort((a, b) => {
         const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
         const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
-        return bTime - aTime; // Descending order
+        return aTime - bTime; // Ascending order - oldest questions first
       });
 
       // Cache the results
@@ -657,11 +657,11 @@ class QuestionService {
         ...doc.data()
       })) as ExamPeriod[];
 
-      // Sort by createdAt on client side
+      // Sort by createdAt on client side - oldest first (ascending order)
       examPeriods.sort((a, b) => {
         const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : 0;
         const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : 0;
-        return bTime - aTime; // Descending order
+        return aTime - bTime; // Ascending order - oldest exam periods first
       });
 
       return examPeriods;
