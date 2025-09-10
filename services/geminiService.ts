@@ -13,21 +13,38 @@ if (!API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: API_KEY! });
 
-// Cache for kanji analysis to avoid repeated API calls
+// Enhanced cache for kanji analysis with individual word caching
 const kanjiCache = new Map<string, { word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[]>();
+const individualWordCache = new Map<string, { word: string; furigana: string; meaning: { en: string; vi: string } }>();
 
 
 
 /**
- * Cleans AI-generated text by removing markdown characters and trimming whitespace.
+ * Cleans AI-generated text by removing markdown characters, special characters, and formatting for better readability.
  * @param text The raw text from the AI.
- * @returns Cleaned, plain text.
+ * @returns Cleaned, plain text with proper line breaks.
  */
 const cleanAiText = (text: string): string => {
   if (!text) return "";
   return text
+    // Remove markdown headers
     .replace(/^[#*+-]\s+/gm, '')
+    // Remove bold/italic markdown
     .replace(/(\*\*|__|\*|_)(.*?)\1/g, '$2')
+    // Remove backticks and code blocks
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    // Remove special characters and emojis (keep basic punctuation)
+    .replace(/[^\w\s\u4e00-\u9faf\u3040-\u309f\u30a0-\u30ff.,!?;:()\-•]/g, '')
+    // Clean up multiple spaces
+    .replace(/\s+/g, ' ')
+    // Clean up multiple line breaks
+    .replace(/\n\s*\n\s*\n/g, '\n\n')
+    // Ensure proper line breaks for bullet points
+    .replace(/•\s*/g, '\n• ')
+    // Ensure proper line breaks for numbered lists
+    .replace(/(\d+\.\s*)/g, '\n$1')
+    // Clean up leading/trailing whitespace
     .trim();
 };
 
@@ -95,11 +112,50 @@ Câu hỏi của người dùng: ${userMessage}`;
 
   async askKaigoSensei(message: string): Promise<string> {
     try {
-      const response: GenerateContentResponse = await chatModel.sendMessage({ message });
+      const kaigoPrompt = `Bạn là Kaigo Fukushi Sensei - chuyên gia hàng đầu về chăm sóc y tế và ngôn ngữ tiếng Nhật y tế tại Nhật Bản.
+
+VAI TRÒ CỦA BẠN:
+• Chuyên gia về 介護福祉士 (Kaigo Fukushi-shi) - nhân viên chăm sóc có chứng chỉ
+• Chuyên gia về ngôn ngữ tiếng Nhật trong lĩnh vực y tế và chăm sóc
+• Giáo viên có kinh nghiệm giảng dạy tiếng Nhật y tế
+• Có thể dịch thuật và giải thích các thuật ngữ y tế Nhật Bản
+
+NHIỆM VỤ:
+1. Trả lời câu hỏi về Kaigo Fukushi và chăm sóc y tế
+2. Dịch thuật tiếng Nhật sang tiếng Việt và ngược lại
+3. Giải thích các thuật ngữ y tế Nhật Bản
+4. Hướng dẫn học tiếng Nhật chuyên ngành y tế
+5. Cung cấp thông tin về kỳ thi 介護福祉士
+
+PHONG CÁCH GIAO TIẾP:
+• Thân thiện, chuyên nghiệp như một giáo viên
+• Sử dụng tiếng Việt dễ hiểu
+• Cung cấp ví dụ cụ thể khi cần
+• Khuyến khích học tập và đặt câu hỏi
+
+QUAN TRỌNG - FORMAT CÂU TRẢ LỜI:
+• Sử dụng xuống dòng (\\n) để tách các đoạn văn
+• Sử dụng bullet points (•) cho danh sách
+• Sử dụng số thứ tự (1., 2., 3.) cho các bước
+• Tạo khoảng trắng giữa các đoạn (\\n\\n)
+• Làm cho câu trả lời dễ đọc và có cấu trúc rõ ràng
+• KHÔNG sử dụng ký tự markdown như #, ##, ###, **, *, backtick, etc.
+• Chỉ sử dụng văn bản thuần túy với bullet points (•) và số thứ tự
+• KHÔNG sử dụng ký tự đặc biệt như emoji, symbols, etc.
+
+Câu hỏi của học viên: ${message}
+
+Hãy trả lời một cách chi tiết, có cấu trúc rõ ràng và dễ đọc:`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: kaigoPrompt,
+      });
+      
       return cleanAiText(response.text);
     } catch (error) {
-      console.error("Error with Mora Sensei chat:", error);
-      return "I'm sorry, I'm having a little trouble right now. Please try again in a moment.";
+      console.error("Error with Kaigo Sensei chat:", error);
+      return "Xin lỗi, tôi đang gặp sự cố kỹ thuật. Vui lòng thử lại sau một chút.";
     }
   },
 
@@ -220,22 +276,115 @@ Respond only with valid JSON, no additional text.`;
       // Check cache first
       const cacheKey = fullText.trim();
       if (kanjiCache.has(cacheKey)) {
-        console.log('Using cached kanji analysis');
+        console.log('✅ Using cached kanji analysis for:', cacheKey.substring(0, 50) + '...');
         return kanjiCache.get(cacheKey)!;
       }
       
-      // Optimized prompt for faster processing
-      const prompt = `Extract kanji words from: "${fullText}"
+      console.log('🔍 Analyzing new kanji text:', fullText.substring(0, 100) + '...');
+      
+      // Fast fallback dictionary for common healthcare terms
+      const commonTerms: { [key: string]: { word: string; furigana: string; meaning: { en: string; vi: string } } } = {
+        '介護': { word: '介護', furigana: 'かいご', meaning: { en: 'nursing care', vi: 'chăm sóc y tế' } },
+        '福祉': { word: '福祉', furigana: 'ふくし', meaning: { en: 'welfare', vi: 'phúc lợi' } },
+        '士': { word: '士', furigana: 'し', meaning: { en: 'professional', vi: 'chuyên gia' } },
+        '介護福祉士': { word: '介護福祉士', furigana: 'かいごふくしし', meaning: { en: 'certified care worker', vi: 'nhân viên chăm sóc có chứng chỉ' } },
+        '看護': { word: '看護', furigana: 'かんご', meaning: { en: 'nursing', vi: 'điều dưỡng' } },
+        '看護師': { word: '看護師', furigana: 'かんごし', meaning: { en: 'nurse', vi: 'y tá' } },
+        '医療': { word: '医療', furigana: 'いりょう', meaning: { en: 'medical care', vi: 'chăm sóc y tế' } },
+        '病院': { word: '病院', furigana: 'びょういん', meaning: { en: 'hospital', vi: 'bệnh viện' } },
+        '患者': { word: '患者', furigana: 'かんじゃ', meaning: { en: 'patient', vi: 'bệnh nhân' } },
+        '治療': { word: '治療', furigana: 'ちりょう', meaning: { en: 'treatment', vi: 'điều trị' } },
+        '薬': { word: '薬', furigana: 'くすり', meaning: { en: 'medicine', vi: 'thuốc' } },
+        '食事': { word: '食事', furigana: 'しょくじ', meaning: { en: 'meal', vi: 'bữa ăn' } },
+        '入浴': { word: '入浴', furigana: 'にゅうよく', meaning: { en: 'bathing', vi: 'tắm rửa' } },
+        '排泄': { word: '排泄', furigana: 'はいせつ', meaning: { en: 'excretion', vi: 'bài tiết' } },
+        '身体': { word: '身体', furigana: 'しんたい', meaning: { en: 'body', vi: 'cơ thể' } },
+        '機能': { word: '機能', furigana: 'きのう', meaning: { en: 'function', vi: 'chức năng' } },
+        '障害': { word: '障害', furigana: 'しょうがい', meaning: { en: 'disability', vi: 'khuyết tật' } },
+        '高齢者': { word: '高齢者', furigana: 'こうれいしゃ', meaning: { en: 'elderly person', vi: 'người cao tuổi' } },
+        '認知症': { word: '認知症', furigana: 'にんちしょう', meaning: { en: 'dementia', vi: 'sa sút trí tuệ' } },
+        'リハビリ': { word: 'リハビリ', furigana: 'りはびり', meaning: { en: 'rehabilitation', vi: 'phục hồi chức năng' } },
+        '老人': { word: '老人', furigana: 'ろうじん', meaning: { en: 'elderly person', vi: 'người già' } },
+        '施設': { word: '施設', furigana: 'しせつ', meaning: { en: 'facility', vi: 'cơ sở' } },
+        '介護老人福祉施設': { word: '介護老人福祉施設', furigana: 'かいごろうじんふくししせつ', meaning: { en: 'elderly care welfare facility', vi: 'cơ sở phúc lợi chăm sóc người già' } },
+        '生活': { word: '生活', furigana: 'せいかつ', meaning: { en: 'daily life', vi: 'cuộc sống hàng ngày' } },
+        '支援': { word: '支援', furigana: 'しえん', meaning: { en: 'support', vi: 'hỗ trợ' } },
+        '自立': { word: '自立', furigana: 'じりつ', meaning: { en: 'independence', vi: 'tự lập' } },
+        '安全': { word: '安全', furigana: 'あんぜん', meaning: { en: 'safety', vi: 'an toàn' } },
+        '健康': { word: '健康', furigana: 'けんこう', meaning: { en: 'health', vi: 'sức khỏe' } },
+        '管理': { word: '管理', furigana: 'かんり', meaning: { en: 'management', vi: 'quản lý' } },
+        '計画': { word: '計画', furigana: 'けいかく', meaning: { en: 'plan', vi: 'kế hoạch' } },
+        '方法': { word: '方法', furigana: 'ほうほう', meaning: { en: 'method', vi: 'phương pháp' } },
+        '技術': { word: '技術', furigana: 'ぎじゅつ', meaning: { en: 'technique', vi: 'kỹ thuật' } },
+        '知識': { word: '知識', furigana: 'ちしき', meaning: { en: 'knowledge', vi: 'kiến thức' } },
+        '経験': { word: '経験', furigana: 'けいけん', meaning: { en: 'experience', vi: 'kinh nghiệm' } },
+        '問題': { word: '問題', furigana: 'もんだい', meaning: { en: 'problem', vi: 'vấn đề' } },
+        '解決': { word: '解決', furigana: 'かいけつ', meaning: { en: 'solution', vi: 'giải pháp' } },
+        '重要': { word: '重要', furigana: 'じゅうよう', meaning: { en: 'important', vi: 'quan trọng' } },
+        '必要': { word: '必要', furigana: 'ひつよう', meaning: { en: 'necessary', vi: 'cần thiết' } },
+        '可能': { word: '可能', furigana: 'かのう', meaning: { en: 'possible', vi: 'có thể' } },
+        '効果': { word: '効果', furigana: 'こうか', meaning: { en: 'effect', vi: 'hiệu quả' } },
+        '結果': { word: '結果', furigana: 'けっか', meaning: { en: 'result', vi: 'kết quả' } },
+        '原因': { word: '原因', furigana: 'げんいん', meaning: { en: 'cause', vi: 'nguyên nhân' } }
+      };
+      
+      // Extract kanji words from text
+      const kanjiRegex = /[\u4e00-\u9faf]+/g;
+      const kanjiWords = fullText.match(kanjiRegex) || [];
+      
+      // Check common terms and individual cache first for instant results
+      const foundCommonTerms: { word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[] = [];
+      const foundCachedTerms: { word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[] = [];
+      const unknownTerms: string[] = [];
+      
+      console.log('🔍 Found kanji words:', kanjiWords);
+      
+      kanjiWords.forEach(word => {
+        if (commonTerms[word]) {
+          console.log('✅ Found in common terms:', word);
+          foundCommonTerms.push(commonTerms[word]);
+        } else if (individualWordCache.has(word)) {
+          console.log('✅ Found in individual cache:', word);
+          foundCachedTerms.push(individualWordCache.get(word)!);
+        } else if (word.length > 1) { // Only analyze multi-character words
+          console.log('❓ Unknown term to analyze:', word);
+          unknownTerms.push(word);
+        }
+      });
+      
+      // Combine all found terms
+      const allFoundTerms = [...foundCommonTerms, ...foundCachedTerms];
+      
+      // If we found any terms, return them immediately and analyze unknown terms in background
+      if (allFoundTerms.length > 0) {
+        console.log('✅ Returning immediate results:', allFoundTerms.length, 'terms');
+        // Cache all found terms immediately
+        kanjiCache.set(cacheKey, allFoundTerms);
+        
+        // Analyze unknown terms in background if any
+        if (unknownTerms.length > 0) {
+          console.log('🔄 Starting background analysis for:', unknownTerms);
+          this.analyzeUnknownKanjiTerms(unknownTerms, cacheKey, allFoundTerms);
+        }
+        
+        return allFoundTerms;
+      }
+      
+      // If no common terms found, use AI for all terms
+      const prompt = `Extract ALL kanji words from: "${fullText}"
 
 Return JSON array:
 [{"word":"介護福祉士","furigana":"かいごふくしし","meaning":{"en":"certified care worker","vi":"nhân viên chăm sóc có chứng chỉ"}}]
 
 Rules:
-- Only healthcare/nursing terms
-- Max 8 words
-- Skip single kanji unless standalone word
-- Be concise`;
+- Extract ALL kanji words found in the text
+- Include both healthcare and general terms
+- Max 12 words
+- Include single kanji if they are standalone words
+- Vietnamese translation must be accurate and concise
+- Focus on complete words, not individual characters`;
       
+      // AI analysis without timeout
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
@@ -270,19 +419,220 @@ Rules:
         index === self.findIndex(t => t.word === item.word)
       );
       
+      // Cache individual words for future use
+      uniqueWords.forEach(word => {
+        if (word.word && word.furigana && word.meaning && word.meaning.en && word.meaning.vi) {
+          individualWordCache.set(word.word, {
+            word: word.word,
+            furigana: word.furigana,
+            meaning: {
+              en: word.meaning.en,
+              vi: word.meaning.vi
+            }
+          });
+        }
+      });
+      
       // Cache the result
       kanjiCache.set(cacheKey, uniqueWords);
       
       // Limit cache size to prevent memory issues
-      if (kanjiCache.size > 50) {
+      if (kanjiCache.size > 100) {
         const firstKey = kanjiCache.keys().next().value;
         kanjiCache.delete(firstKey);
+      }
+      
+      if (individualWordCache.size > 200) {
+        const firstKey = individualWordCache.keys().next().value;
+        individualWordCache.delete(firstKey);
       }
       
       return uniqueWords;
     } catch (error) {
       console.error("Error analyzing kanji in question:", error);
       return [];
+    }
+  },
+
+  // Fresh kanji analysis without cache - for manual button click
+  async analyzeKanjiInQuestionFresh(questionText: string, options: string[]): Promise<{ word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[]> {
+    const fullText = `${questionText} ${options.join(' ')}`;
+    
+    console.log('🆕 Starting fresh kanji analysis for:', fullText.substring(0, 100) + '...');
+    
+    // Extract kanji words from text
+    const kanjiRegex = /[\u4e00-\u9faf]+/g;
+    const kanjiWords = fullText.match(kanjiRegex) || [];
+    
+    console.log('🔍 Found kanji words:', kanjiWords);
+    
+    if (kanjiWords.length === 0) {
+      console.log('❌ No kanji words found');
+      return [];
+    }
+    
+    // Remove duplicates and limit to reasonable number
+    const uniqueKanjiWords = [...new Set(kanjiWords)].slice(0, 15);
+    console.log('📝 Analyzing unique kanji words:', uniqueKanjiWords.length);
+    
+    try {
+      
+      // Use AI to analyze kanji words in batches
+      const prompt = `Analyze these Japanese kanji words and provide furigana and Vietnamese meaning:
+
+${uniqueKanjiWords.join(', ')}
+
+Return ONLY a valid JSON array in this exact format:
+[{"word":"介護","furigana":"かいご","meaning":{"en":"nursing care","vi":"chăm sóc y tế"}}]
+
+Requirements:
+- One entry per kanji word
+- Provide accurate furigana
+- Vietnamese meaning must be concise and accurate
+- Return valid JSON only, no other text`;
+      
+      // AI analysis without timeout
+      console.log('🤖 Sending request to AI...');
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                word: { type: Type.STRING },
+                furigana: { type: Type.STRING },
+                meaning: {
+                  type: Type.OBJECT,
+                  properties: {
+                    en: { type: Type.STRING },
+                    vi: { type: Type.STRING }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      console.log('📥 AI response received');
+      const jsonText = response.text.trim();
+      console.log('📄 Raw AI response:', jsonText.substring(0, 200) + '...');
+      
+      const parsed = JSON.parse(jsonText) as { word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[];
+      
+      // Quick validation and deduplication
+      const validWords = parsed.filter(item => item.word && item.furigana && item.meaning);
+      const uniqueWords = validWords.filter((item, index, self) => 
+        index === self.findIndex(t => t.word === item.word)
+      );
+      
+      console.log('✅ Fresh analysis completed:', uniqueWords.length, 'words');
+      
+      // Cache individual words for future use (but not the full result)
+      uniqueWords.forEach(word => {
+        if (word.word && word.furigana && word.meaning && word.meaning.en && word.meaning.vi) {
+          individualWordCache.set(word.word, {
+            word: word.word,
+            furigana: word.furigana,
+            meaning: {
+              en: word.meaning.en,
+              vi: word.meaning.vi
+            }
+          });
+        }
+      });
+      
+      return uniqueWords;
+    } catch (error) {
+      console.error("❌ Error in fresh kanji analysis:", error);
+      
+      // Fallback: return basic kanji words without AI analysis
+      console.log('🔄 AI analysis failed, returning basic kanji words');
+      const basicWords = uniqueKanjiWords.slice(0, 10).map(word => ({
+        word: word,
+        furigana: '読み方不明',
+        meaning: {
+          en: 'Reading unknown',
+          vi: 'Cách đọc chưa xác định'
+        }
+      }));
+      return basicWords;
+    }
+  },
+
+  // Background analysis for unknown terms
+  async analyzeUnknownKanjiTerms(unknownTerms: string[], cacheKey: string, existingTerms: { word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[]): Promise<void> {
+    try {
+      console.log('🔄 Starting background analysis for terms:', unknownTerms);
+      
+      const prompt = `Analyze these Japanese terms: ${unknownTerms.join(', ')}
+
+Return JSON array with word, furigana, and Vietnamese meaning:
+[{"word":"介護","furigana":"かいご","meaning":{"en":"nursing care","vi":"chăm sóc y tế"}}]
+
+Rules:
+- Include both healthcare and general terms
+- Vietnamese translation must be accurate and concise`;
+      
+      // Background analysis without timeout
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                word: { type: Type.STRING },
+                furigana: { type: Type.STRING },
+                meaning: {
+                  type: Type.OBJECT,
+                  properties: {
+                    en: { type: Type.STRING },
+                    vi: { type: Type.STRING }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      const jsonText = response.text.trim();
+      const parsed = JSON.parse(jsonText) as { word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[];
+      
+      const validWords = parsed.filter(item => item.word && item.furigana && item.meaning);
+      
+      console.log('📝 Background analysis result:', validWords);
+      
+      // Cache individual words for future use
+      validWords.forEach(word => {
+        if (word.word && word.furigana && word.meaning && word.meaning.en && word.meaning.vi) {
+          individualWordCache.set(word.word, {
+            word: word.word,
+            furigana: word.furigana,
+            meaning: {
+              en: word.meaning.en,
+              vi: word.meaning.vi
+            }
+          });
+          console.log('💾 Cached individual word:', word.word);
+        }
+      });
+      
+      // Update cache with combined results
+      const combinedTerms = [...existingTerms, ...validWords];
+      kanjiCache.set(cacheKey, combinedTerms);
+      
+      console.log('✅ Background kanji analysis completed, updated cache for:', cacheKey);
+    } catch (error) {
+      console.error("❌ Error in background kanji analysis:", error);
     }
   },
   

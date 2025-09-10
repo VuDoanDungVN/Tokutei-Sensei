@@ -31,10 +31,15 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, isMockExam }) => {
   const [eliminatedOptions, setEliminatedOptions] = useState<number[]>([]);
   const [isHintLoading, setIsHintLoading] = useState(false);
   
-  // Kanji analysis state
-  const [currentKanjiWords, setCurrentKanjiWords] = useState<{ word?: string; furigana?: string; meaning?: { en?: string; vi?: string } }[]>([]);
-  const [isKanjiAnalyzing, setIsKanjiAnalyzing] = useState(false);
-  const [showKanjiHints, setShowKanjiHints] = useState(false);
+  // Kaigo Chat state
+  const [showKaigoChat, setShowKaigoChat] = useState(false);
+  const [kaigoChatMessages, setKaigoChatMessages] = useState<{ text: string; isUser: boolean; timestamp: string }[]>([]);
+  const [kaigoChatInput, setKaigoChatInput] = useState('');
+  const [isKaigoChatLoading, setIsKaigoChatLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  
+  // Copy functionality state
+  const [copyStatus, setCopyStatus] = useState<{ type: 'question' | 'options' | null; success: boolean }>({ type: null, success: false });
 
   const question = questions[currentQ];
 
@@ -101,12 +106,136 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, isMockExam }) => {
     }
   }, [showExplanation, question, settings.language]);
 
-  // Auto-analyze kanji when question changes
-  useEffect(() => {
-    if (question && !showExplanation && selectedAnswer === null) {
-      analyzeKanjiForQuestion(question);
+  // Kaigo Chat functions
+  const handleKaigoChatSend = async () => {
+    if (!kaigoChatInput.trim() || isKaigoChatLoading) return;
+    
+    const userMessage = kaigoChatInput.trim();
+    const timestamp = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    
+    // Check if the message contains Japanese text
+    const containsJapanese = isJapaneseText(userMessage);
+    
+    // Add user message
+    setKaigoChatMessages(prev => [...prev, { text: userMessage, isUser: true, timestamp }]);
+    setKaigoChatInput('');
+    setIsKaigoChatLoading(true);
+    
+    try {
+      let finalMessage = userMessage;
+      
+      // If the message contains Japanese, translate it first
+      if (containsJapanese) {
+        try {
+          const translatedText = await appService.translateText(userMessage, 'vi');
+          finalMessage = `[Dịch từ tiếng Nhật]: ${translatedText}\n\n[Văn bản gốc]: ${userMessage}`;
+          
+          // Add translation message
+          const translationTimestamp = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+          setKaigoChatMessages(prev => [...prev, { 
+            text: `📝 Đã dịch sang tiếng Việt:\n${translatedText}`, 
+            isUser: false, 
+            timestamp: translationTimestamp 
+          }]);
+        } catch (translationError) {
+          console.error('❌ Error translating text:', translationError);
+          // Continue with original message if translation fails
+        }
+      }
+      
+      // Get AI response
+      const aiResponse = await appService.askKaigoSensei(finalMessage);
+      const aiTimestamp = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      
+      // Add AI response
+      setKaigoChatMessages(prev => [...prev, { text: aiResponse, isUser: false, timestamp: aiTimestamp }]);
+    } catch (error) {
+      console.error('❌ Error getting AI response:', error);
+      const errorTimestamp = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      setKaigoChatMessages(prev => [...prev, { 
+        text: 'Xin lỗi, tôi gặp sự cố kỹ thuật. Vui lòng thử lại sau.', 
+        isUser: false, 
+        timestamp: errorTimestamp 
+      }]);
+    } finally {
+      setIsKaigoChatLoading(false);
     }
-  }, [question, showExplanation, selectedAnswer]);
+  };
+
+  // Voice input function
+  const handleVoiceInput = () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      alert('Trình duyệt của bạn không hỗ trợ voice input. Vui lòng sử dụng bàn phím.');
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    recognition.lang = 'vi-VN'; // Vietnamese
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    
+    setIsListening(true);
+    
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setKaigoChatInput(transcript);
+      setIsListening(false);
+    };
+    
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      setIsListening(false);
+      if (event.error === 'not-allowed') {
+        alert('Vui lòng cho phép sử dụng microphone để sử dụng tính năng voice input.');
+      }
+    };
+    
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+    
+    recognition.start();
+  };
+
+  // Helper function to detect Japanese text
+  const isJapaneseText = (text: string): boolean => {
+    // Check for Hiragana, Katakana, and Kanji characters
+    const japaneseRegex = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf]/;
+    return japaneseRegex.test(text);
+  };
+
+  // Copy functions
+  const handleCopyQuestion = async () => {
+    try {
+      const questionText = question.question;
+      await navigator.clipboard.writeText(questionText);
+      setCopyStatus({ type: 'question', success: true });
+      setTimeout(() => setCopyStatus({ type: null, success: false }), 2000);
+    } catch (error) {
+      console.error('Failed to copy question:', error);
+      setCopyStatus({ type: 'question', success: false });
+      setTimeout(() => setCopyStatus({ type: null, success: false }), 2000);
+    }
+  };
+
+  const handleCopyOptions = async () => {
+    try {
+      const optionsText = question.options.map((option, index) => {
+        const optionText = typeof option === 'string' ? option : option.text;
+        return `${index + 1}. ${optionText}`;
+      }).join('\n');
+      
+      await navigator.clipboard.writeText(optionsText);
+      setCopyStatus({ type: 'options', success: true });
+      setTimeout(() => setCopyStatus({ type: null, success: false }), 2000);
+    } catch (error) {
+      console.error('Failed to copy options:', error);
+      setCopyStatus({ type: 'options', success: false });
+      setTimeout(() => setCopyStatus({ type: null, success: false }), 2000);
+    }
+  };
 
 
   const handleSelectAnswer = (index: number) => {
@@ -142,9 +271,15 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, isMockExam }) => {
     setHint(null);
     setEliminatedOptions([]);
     setIsHintLoading(false);
-    setCurrentKanjiWords([]);
-    setIsKanjiAnalyzing(false);
-    setShowKanjiHints(false); // Reset to hide hints for new question
+    // Reset kaigo chat states
+    setShowKaigoChat(false);
+    setKaigoChatMessages([]);
+    setKaigoChatInput('');
+    setIsKaigoChatLoading(false);
+    setIsListening(false);
+    
+    // Reset copy status
+    setCopyStatus({ type: null, success: false });
 
 
     if (currentQ < questions.length - 1) {
@@ -210,46 +345,6 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, isMockExam }) => {
     return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const analyzeKanjiForQuestion = async (questionData: Question) => {
-    if (!questionData) return;
-    
-    setIsKanjiAnalyzing(true);
-    
-    // Extract basic kanji words immediately (fast fallback)
-    const fullText = `${questionData.question} ${questionData.options.map(opt => typeof opt === 'string' ? opt : opt.text).join(' ')}`;
-    const kanjiRegex = /[\u4e00-\u9faf]+/g;
-    const basicKanjiWords = fullText.match(kanjiRegex) || [];
-    
-    // Show basic kanji words immediately
-    const basicWords = basicKanjiWords.slice(0, 8).map(word => ({
-      word: word,
-      furigana: '読み方...',
-      meaning: {
-        en: 'Reading...',
-        vi: 'Đang phân tích...'
-      }
-    }));
-    
-    setCurrentKanjiWords(basicWords);
-    
-    try {
-      // Get options text
-      const optionsText = questionData.options.map(opt => typeof opt === 'string' ? opt : opt.text);
-      
-      // Let AI analyze without timeout - let it take as long as needed
-      const kanjiWords = await appService.analyzeKanjiInQuestion(questionData.question, optionsText);
-      
-      // Update with AI results if successful
-      if (kanjiWords && kanjiWords.length > 0) {
-        setCurrentKanjiWords(kanjiWords);
-      }
-    } catch (error) {
-      console.error('Error analyzing kanji:', error);
-      // Keep the basic words if AI fails
-    } finally {
-      setIsKanjiAnalyzing(false);
-    }
-  };
 
   const parseQuestionText = (text: string, hints: KanjiHint[] | undefined): React.ReactNode => {
     if (!hints || hints.length === 0 || !text) {
@@ -342,58 +437,144 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, isMockExam }) => {
       {/* Question Card */}
       <Card className="flex-grow flex flex-col">
         <div className="bg-gray-50 p-4 rounded-lg mb-6">
-          <p className="text-lg font-semibold leading-relaxed whitespace-pre-wrap">
-            {parseQuestionText(question.question, question.kanjiHints)}
-          </p>
-          
-          {/* Auto-display kanji hints */}
-          {(currentKanjiWords.length > 0 || isKanjiAnalyzing) && (
-            <div className="mt-4 pt-3 border-t border-gray-200">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm font-medium text-gray-600">漢字のヒント (Kanji Hints)</span>
-                  {isKanjiAnalyzing && (
-                    <span className="text-xs text-blue-600 flex items-center">
-                      <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-600 mr-1"></div>
-                      Đang phân tích...
-                    </span>
-                  )}
-                </div>
-                <button
-                  onClick={() => setShowKanjiHints(!showKanjiHints)}
-                  className="text-gray-500 hover:text-gray-700 transition-colors p-1"
-                  title={showKanjiHints ? 'Ẩn gợi ý kanji' : 'Hiện gợi ý kanji'}
-                >
-                  {showKanjiHints ? (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-              {showKanjiHints && (
-                <div className="flex flex-wrap gap-2">
-                  {currentKanjiWords.map((word, index) => (
-                    <div key={index} className="flex items-center bg-white px-2 py-1 rounded border text-xs">
-                      <span className="font-bold text-gray-800 mr-1" style={{ fontSize: '13px' }}>
-                        {word.word}
-                      </span>
-                      <span className="text-red-600 mr-1" style={{ fontSize: '13px' }}>
-                        ({word.furigana})
-                      </span>
-                      <span className="text-gray-600" style={{ fontSize: '13px' }}>
-                        {word.meaning?.[settings.language] || 'N/A'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+          <div className="flex items-start justify-between mb-3">
+            <p className="text-lg font-semibold leading-relaxed whitespace-pre-wrap flex-1">
+              {parseQuestionText(question.question, question.kanjiHints)}
+            </p>
+            <button
+              onClick={handleCopyQuestion}
+              className="ml-3 p-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors shrink-0"
+              title="Copy câu hỏi"
+            >
+              {copyStatus.type === 'question' && copyStatus.success ? (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
               )}
+            </button>
+          </div>
+          
+          {/* Kaigo Fukushi AI Chat */}
+          <div className="mt-4 pt-3 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-2">
+                <span className="text-lg">🤖</span>
+                <span className="text-sm font-medium text-gray-700">Học cùng AI</span>
+              </div>
+              <button
+                onClick={() => {
+                  setShowKaigoChat(!showKaigoChat);
+                  // Add welcome message when opening chat for the first time
+                  if (!showKaigoChat && kaigoChatMessages.length === 0) {
+                    const welcomeMessage = {
+                      text: "Xin chào! Tôi là Kaigo Fukushi Sensei\n\nChuyên gia về chăm sóc y tế & tiếng Nhật y tế\n\nTôi có thể giúp bạn:\n• Dịch thuật tiếng Nhật y tế (tự động khi bạn paste)\n• Giải thích thuật ngữ Kaigo Fukushi\n• Học tiếng Nhật chuyên ngành\n• Hướng dẫn kỳ thi 介護福祉士\n• Trả lời câu hỏi về chăm sóc y tế\n\nMẹo: Copy câu hỏi tiếng Nhật và paste vào đây để dịch tự động!\n\nHãy hỏi tôi bất cứ điều gì!",
+                      isUser: false,
+                      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                    };
+                    setKaigoChatMessages([welcomeMessage]);
+                  }
+                }}
+                className="flex items-center space-x-2 px-3 py-2 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg transition-colors"
+                title="Chat với AI chuyên gia Kaigo Fukushi"
+              >
+                <span className="text-sm font-medium">
+                  {showKaigoChat ? 'Ẩn Chat' : 'Mở Chat'}
+                </span>
+              </button>
             </div>
-          )}
+            
+            {showKaigoChat && (
+              <div className="bg-white border border-gray-200 rounded-lg h-80 flex flex-col">
+                {/* Chat Header */}
+                <div className="p-3 border-b bg-green-50 rounded-t-lg">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-sm font-bold">K</span>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-800">Kaigo Fukushi Sensei</h3>
+                      <p className="text-xs text-gray-600">Chuyên gia về chăm sóc y tế & ngôn ngữ tiếng Nhật</p>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Chat Messages */}
+                <div className="flex-1 p-3 overflow-y-auto space-y-3">
+                      {kaigoChatMessages.map((message, index) => (
+                        <div key={index} className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-xs lg:max-w-md px-3 py-2 rounded-lg ${
+                            message.isUser 
+                              ? 'bg-blue-500 text-white' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            <div className="text-sm whitespace-pre-wrap">{message.text}</div>
+                            <p className="text-xs opacity-70 mt-1">{message.timestamp}</p>
+                          </div>
+                        </div>
+                      ))}
+                  
+                  {isKaigoChatLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-gray-100 text-gray-800 max-w-xs lg:max-w-md px-3 py-2 rounded-lg">
+                        <div className="flex items-center space-x-2">
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-600"></div>
+                          <span className="text-sm">Kaigo Sensei đang suy nghĩ...</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Chat Input */}
+                <div className="p-3 border-t">
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={kaigoChatInput}
+                      onChange={(e) => setKaigoChatInput(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleKaigoChatSend()}
+                      placeholder="Hỏi về Kaigo Fukushi, copy câu hỏi tiếng Nhật để dịch tự động, hoặc chat với AI..."
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                      disabled={isKaigoChatLoading}
+                    />
+                    <button
+                      onClick={handleVoiceInput}
+                      disabled={isKaigoChatLoading || isListening}
+                      className={`px-3 py-2 rounded-lg transition-colors ${
+                        isListening 
+                          ? 'bg-red-500 text-white animate-pulse' 
+                          : 'bg-blue-500 text-white hover:bg-blue-600'
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      title={isListening ? 'Đang nghe...' : 'Nhấn để nói'}
+                    >
+                      {isListening ? (
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                          <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                          <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleKaigoChatSend}
+                      disabled={!kaigoChatInput.trim() || isKaigoChatLoading}
+                      className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                    >
+                      Gửi
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {isHintLoading && (
@@ -408,6 +589,24 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, isMockExam }) => {
         )}
 
         <div className="space-y-3">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-gray-700">Câu trả lời:</h3>
+            <button
+              onClick={handleCopyOptions}
+              className="p-2 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 transition-colors"
+              title="Copy tất cả câu trả lời"
+            >
+              {copyStatus.type === 'options' && copyStatus.success ? (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+              )}
+            </button>
+          </div>
           {question.options.map((option, index) => {
             const isSelected = selectedAnswer === index;
             const isEliminated = eliminatedOptions.includes(index);
@@ -475,6 +674,7 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, isMockExam }) => {
           {showExplanation ? (currentQ === questions.length-1 ? t('quiz.finish') : t('quiz.next')) : isMockExam ? (currentQ === questions.length-1 ? t('quiz.finish') : t('quiz.next')) : t('quiz.checkAnswer')}
         </Button>
       </div>
+
 
     </div>
   );

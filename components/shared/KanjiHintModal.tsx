@@ -47,7 +47,13 @@ const KanjiHintModal: React.FC<KanjiHintModalProps> = ({
             <p className="text-sm text-gray-600 mt-1">
               Câu hỏi này có {kanjiWords.length} từ/cụm từ kanji
               {isLoading && kanjiWords.length > 0 && (
-                <span className="ml-2 text-blue-600 text-xs">🔄 Đang cập nhật...</span>
+                <span className="ml-2 text-blue-600 text-xs flex items-center">
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600 mr-1"></div>
+                  Đang cập nhật thêm từ...
+                </span>
+              )}
+              {!isLoading && kanjiWords.length > 0 && (
+                <span className="ml-2 text-green-600 text-xs">✅ Đã dịch xong</span>
               )}
             </p>
           </div>
@@ -105,11 +111,18 @@ const KanjiHintModal: React.FC<KanjiHintModalProps> = ({
                         {/* Meaning */}
                         <div className="flex items-start space-x-2">
                           <span className="text-sm font-medium text-gray-500 flex-shrink-0">
-                            {getLanguageLabel()}:
+                            {getLanguageLabel()}: 
                           </span>
-                          <span className="text-base text-gray-800 bg-gray-50 px-2 py-1 rounded">
+                          <span className={`text-base px-2 py-1 rounded ${
+                            word.meaning?.[language] && word.meaning[language] !== 'Đang phân tích...' && word.meaning[language] !== 'Reading...'
+                              ? 'text-gray-800 bg-gray-50' 
+                              : 'text-gray-500 bg-yellow-50 animate-pulse'
+                          }`}>
                             {word.meaning?.[language] || 'Nghĩa không có sẵn'}
                           </span>
+                          {word.meaning?.[language] && word.meaning[language] !== 'Đang phân tích...' && word.meaning[language] !== 'Reading...' && (
+                            <span className="text-green-500 text-xs">✓</span>
+                          )}
                         </div>
                       </div>
                     </div>
