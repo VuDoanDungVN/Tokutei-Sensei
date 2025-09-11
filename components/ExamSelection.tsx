@@ -11,11 +11,11 @@ const ExamSelection: React.FC<ExamSelectionProps> = ({ onSelectExam }) => {
   const { t, settings } = useContext(AppContext);
   const [isExamSectionOpen, setIsExamSectionOpen] = useState(false);
   const currentExamYear = 37;
-  const exams = Array.from({ length: currentExamYear }, (_, i) => currentExamYear - i);
+  const exams = [37, 36, 35]; // Only exams 35, 36, 37
 
   // Group all exams in one decade (2020s)
   const groupedExams = {
-    20: exams // All exams from 1-37 in the 2020s decade
+    20: exams // Only exams 35-37 in the 2020s decade
   };
 
   return (
@@ -40,7 +40,7 @@ const ExamSelection: React.FC<ExamSelectionProps> = ({ onSelectExam }) => {
         <Card className="mt-8 bg-gradient-to-r from-blue-50 to-green-50 border-blue-200">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
             <div>
-              <div className="text-2xl font-bold text-blue-600">{currentExamYear}</div>
+              <div className="text-2xl font-bold text-blue-600">{exams.length}</div>
               <div className="text-sm text-gray-600">Kỳ thi có sẵn</div>
             </div>
             <div>
@@ -48,7 +48,7 @@ const ExamSelection: React.FC<ExamSelectionProps> = ({ onSelectExam }) => {
               <div className="text-sm text-gray-600">Chủ đề chính</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-purple-600">1000+</div>
+              <div className="text-2xl font-bold text-purple-600">300+</div>
               <div className="text-sm text-gray-600">Câu hỏi luyện tập</div>
             </div>
           </div>
@@ -68,7 +68,7 @@ const ExamSelection: React.FC<ExamSelectionProps> = ({ onSelectExam }) => {
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-800">
-                  Tất cả kỳ thi Kaigo Fukushi
+                  Kỳ thi Kaigo Fukushi (35-37)
                 </h3>
                 <p className="text-sm text-gray-600">Chọn kỳ thi để bắt đầu luyện tập</p>
               </div>
@@ -86,28 +86,19 @@ const ExamSelection: React.FC<ExamSelectionProps> = ({ onSelectExam }) => {
           {isExamSectionOpen && (
             <div className="px-4 pb-4">
               <div className="border-t border-gray-200 pt-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {exams.map(examNumber => (
                     <Card
                       key={examNumber}
                       onClick={() => onSelectExam(examNumber)}
-                      className="!p-0 text-center flex flex-col items-center justify-center aspect-square transition-all duration-300 transform hover:scale-105 hover:shadow-lg border-2 border-transparent hover:border-green-300 bg-white hover:bg-green-50 group cursor-pointer"
+                      className="!p-6 text-center flex flex-col items-center justify-center transition-all duration-300 transform hover:scale-105 hover:shadow-lg border-2 border-transparent hover:border-green-300 bg-white hover:bg-green-50 group cursor-pointer"
                     >
                       <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center mb-2 group-hover:from-green-500 group-hover:to-green-700 transition-all duration-300">
                         <span className="text-white font-bold text-lg">{examNumber}</span>
                       </div>
-                      <div className="font-semibold text-gray-800 text-sm">
-                        {settings.language === 'ja'
-                          ? t('practice.examN', { n: examNumber })
-                          : (
-                            <>
-                              <span className="block text-sm font-bold">{t('practice.examN', { n: examNumber }).split('(')[0]}</span>
-                              <span className="block text-xs text-gray-500 mt-1">
-                                {t('practice.examN', { n: examNumber }).split('(')[1]?.replace(')', '')}
-                              </span>
-                            </>
-                          )
-                        }
+                      <div className="font-semibold text-gray-800">
+                        <div className="text-lg font-bold">{t('practice.examN', { n: examNumber })}</div>
+                        <div className="text-sm text-gray-500 mt-1">Kỳ thi</div>
                       </div>
                       <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>

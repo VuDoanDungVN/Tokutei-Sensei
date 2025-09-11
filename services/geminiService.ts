@@ -34,12 +34,12 @@ const cleanAiText = (text: string): string => {
     // Remove backticks and code blocks
     .replace(/```[\s\S]*?```/g, '')
     .replace(/`([^`]+)`/g, '$1')
-    // Remove special characters and emojis (keep basic punctuation)
-    .replace(/[^\w\s\u4e00-\u9faf\u3040-\u309f\u30a0-\u30ff.,!?;:()\-•]/g, '')
+    // Remove special characters and emojis (keep basic punctuation and Vietnamese characters)
+    .replace(/[^\w\s\u4e00-\u9faf\u3040-\u309f\u30a0-\u30ff\u00C0-\u1EF9.,!?;:()\-•]/g, '')
     // Clean up multiple spaces
     .replace(/\s+/g, ' ')
-    // Clean up multiple line breaks
-    .replace(/\n\s*\n\s*\n/g, '\n\n')
+    // Clean up excessive line breaks (more than 2 consecutive)
+    .replace(/\n\s*\n\s*\n+/g, '\n\n')
     // Ensure proper line breaks for bullet points
     .replace(/•\s*/g, '\n• ')
     // Ensure proper line breaks for numbered lists
@@ -176,6 +176,99 @@ Hãy trả lời một cách chi tiết, có cấu trúc rõ ràng và dễ đ�
       console.error(`Error translating text to ${targetLanguage}:`, error);
       return "Sorry, I couldn't translate that right now.";
     }
+  },
+
+  async translateJapaneseWithReading(text: string): Promise<string> {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Translate the following Japanese text to Vietnamese and provide the reading (furigana/romaji) for each Japanese word. Format the response with proper line breaks and clear structure.
+
+Japanese text: "${text}"
+
+Please provide a well-formatted response with clear sections and line breaks:
+
+【原文】
+[Japanese text]
+
+【読み方】
+[Reading in hiragana/romaji]
+
+【意味】
+[Vietnamese translation]
+
+【単語分解】
+[Word-by-word breakdown with readings and meanings - each word on a new line]
+
+Format requirements:
+- Use proper Vietnamese diacritics
+- Provide accurate readings
+- Give clear, easy-to-understand Vietnamese translations
+- Each word in 単語分解 should be on a separate line
+- Use line breaks (\\n) to separate sections
+- Use line breaks (\\n) to separate individual words in the breakdown
+- Make the text easy to read with proper spacing
+- Use plain text only, no markdown formatting`,
+      });
+      
+      // Process the response to ensure proper formatting
+      const rawText = response.text;
+      return this.formatTranslationResponse(rawText);
+    } catch (error) {
+      console.error('Error translating Japanese with reading:', error);
+      return "Xin lỗi, không thể dịch văn bản tiếng Nhật. Vui lòng thử lại.";
+    }
+  },
+
+  formatTranslationResponse(text: string): string {
+    if (!text) return "";
+    
+    // Clean the text first
+    let cleaned = text
+      // Remove markdown headers
+      .replace(/^[#*+-]\s+/gm, '')
+      // Remove bold/italic markdown
+      .replace(/(\*\*|__|\*|_)(.*?)\1/g, '$2')
+      // Remove backticks and code blocks
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/`([^`]+)`/g, '$1')
+      // Remove special characters and emojis (keep basic punctuation and Vietnamese characters)
+      .replace(/[^\w\s\u4e00-\u9faf\u3040-\u309f\u30a0-\u30ff\u00C0-\u1EF9.,!?;:()\-•【】]/g, '')
+      // Clean up multiple spaces
+      .replace(/\s+/g, ' ')
+      // Clean up excessive line breaks (more than 2 consecutive)
+      .replace(/\n\s*\n\s*\n+/g, '\n\n')
+      // Ensure proper line breaks for bullet points
+      .replace(/•\s*/g, '\n• ')
+      // Ensure proper line breaks for numbered lists
+      .replace(/(\d+\.\s*)/g, '\n$1')
+      // Clean up leading/trailing whitespace
+      .trim();
+
+    // Ensure proper spacing between sections
+    cleaned = cleaned
+      .replace(/【原文】/g, '\n【原文】\n')
+      .replace(/【読み方】/g, '\n【読み方】\n')
+      .replace(/【意味】/g, '\n【意味】\n')
+      .replace(/【単語分解】/g, '\n【単語分解】\n')
+      // Clean up multiple line breaks again
+      .replace(/\n\s*\n\s*\n+/g, '\n\n')
+      .trim();
+
+    // Format word breakdown items for better display
+    cleaned = cleaned
+      .split('\n')
+      .map(line => {
+        // Format word breakdown items to have consistent structure
+        if (line.includes('(') && line.includes(')') && !line.match(/^【.*】$/)) {
+          // Ensure there's a space before the dash if missing
+          line = line.replace(/\)\s*-\s*/, ') - ');
+        }
+        return line;
+      })
+      .join('\n');
+
+    return cleaned;
   },
 
   async getQuestionHint(questionText: string, options: string[]): Promise<string> {
